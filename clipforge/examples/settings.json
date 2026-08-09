@@ -1,0 +1,29 @@
+{
+  "preset": "reels",
+  "fill": "blur",
+  "trim_edges": true,
+  "pause_threshold": 1.0,
+  "pause_action": "speed",
+  "pause_speed": 5.0,
+  "max_stage_seconds": 12.0,
+  "max_speed": 4.0,
+  "crossfade": 0.5,
+  "transition": "fade",
+  "keep_audio": false,
+  "crf": 20,
+  "x264_preset": "medium",
+  "text": {
+    "text": "Нашёл домен за 3 минуты\nи забрал первую выплату",
+    "font": "Montserrat",
+    "size": 68,
+    "color": "#ffffff",
+    "position": "bottom",
+    "box_opacity": 0.45,
+    "fade": 0.4,
+    "wrap": 20
+  },
+  "stage_captions": {
+    "hooks": "Смотри до конца",
+    "payout": "+412$ за день"
+  }
+}
