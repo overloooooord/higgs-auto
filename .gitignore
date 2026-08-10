@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.lock
+downloaded_files/
+clipforge/downloaded_files/
+ask_claude.py
+test_claude.py
+/tmp/

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import PRESETS, STAGES, STAGE_KEYS, VIDEO_EXT, Settings, available_fonts
 from .ffmpeg import FFmpegError, check_tools, ffmpeg_bin, probe
+from .jobs import CANCELLED, DONE, ERROR, MANAGER
 from .pipeline import build
 
 UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
@@ -24,16 +25,7 @@ ROOT = os.path.join(tempfile.gettempdir(), "clipforge_jobs")
 MAX_UPLOAD = 4 * 1024 * 1024 * 1024      # 4 ГБ на файл
 
 JOBS: dict[str, dict] = {}
-HOOK_GEN_JOB: dict = {"state": "idle", "percent": 0.0, "log": [], "done": 0, "total": 0, "error": None}
 LOCK = threading.Lock()
-
-
-def push_hook_log(message: str) -> None:
-    if not message:
-        return
-    with LOCK:
-        HOOK_GEN_JOB["log"].append(message)
-        del HOOK_GEN_JOB["log"][:-400]
 
 
 def job_dir(job: str) -> str:
@@ -104,115 +96,73 @@ def run_job(job: str, settings: Settings, inputs: dict[str, str], out_name: str)
         shutil.rmtree(os.path.join(work, "tmp"), ignore_errors=True)
 
 
-def run_generate_hooks_job(count: int, workers: int, gen_per_model: int,
+def run_generate_hooks_job(job, workers: int, gen_per_model: int,
                            v_dir: str, m_dir: str, o_dir: str, headed: bool,
-                           model_photo: str = "", auto_assemble: bool = False,
-                           batch_mode: str = "soft", uniquify: bool = False,
-                           final_out_dir: str = "./output") -> None:
-    import sys
-    global HOOK_GEN_JOB
-    with LOCK:
-        HOOK_GEN_JOB.update(state="running", percent=0.0, log=[], done=0, total=count, error=None)
+                           model_photo: str = "",
+                           timeout_gen: int = 300, max_retries: int = 2,
+                           timeout_attempt: int = 900,
+                           nsfw_rotations: int = 3) -> None:
+    """Рабочий поток генерации хуков.
 
-    cmd = [
-        sys.executable, "-m", "clipforge.generate_hooks",
-        "--count", str(count),
-        "--workers", str(workers),
-        "--generations-per-model", str(gen_per_model),
-        "--videos-dir", v_dir,
-        "--models-dir", m_dir,
-        "--output-dir", o_dir,
-    ]
-    if model_photo:
-        cmd.extend(["--model-photo", model_photo])
-    if headed:
-        cmd.append("--headed")
-
-    push_hook_log(f"🚀 Запуск генерации хуков: {' '.join(cmd)}")
+    Состояние живёт в объекте `job`; слот менеджера освобождается в `finally`
+    через `MANAGER.finalize()`. Поэтому после любого исхода — успех, отмена,
+    ошибка, таймаут — приложение возвращается в «Готов к новой задаче» без
+    перезапуска.
+    """
+    state, error, summary = DONE, None, ""
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        with LOCK:
-            HOOK_GEN_JOB["proc"] = proc
+        from .generate_hooks import HookGenerator
 
-        for line in iter(proc.stdout.readline, ''):
-            if not line:
-                break
-            txt = line.rstrip()
-            push_hook_log(txt)
-            m = re.search(r"Hook (\d+)/(\d+)", txt)
-            if m:
-                cur, tot = int(m.group(1)), int(m.group(2))
-                with LOCK:
-                    HOOK_GEN_JOB["done"] = cur - 1
-                    HOOK_GEN_JOB["total"] = tot
-                    HOOK_GEN_JOB["percent"] = round(((cur - 1) / max(1, tot)) * 100, 1)
-            m_done = re.search(r"Done: (\d+)/(\d+)", txt)
-            if m_done:
-                cur, tot = int(m_done.group(1)), int(m_done.group(2))
-                with LOCK:
-                    HOOK_GEN_JOB["done"] = cur
-                    HOOK_GEN_JOB["total"] = tot
-                    HOOK_GEN_JOB["percent"] = round((cur / max(1, tot)) * 100, 1)
-
-        proc.wait()
-        with LOCK:
-            HOOK_GEN_JOB.pop("proc", None)
-            if proc.returncode == 0:
-                HOOK_GEN_JOB.update(state="done", percent=100.0)
-                push_hook_log("✅ Генерация хуков завершена успешно!")
-            else:
-                HOOK_GEN_JOB.update(state="error", error=f"Процесс завершился с кодом {proc.returncode}")
-                return
-
-        # Если включена авто-сборка ролика
-        if auto_assemble and proc.returncode == 0:
-            push_hook_log(f"\n🎬 Запуск авто-сборки монтажа в режиме «{batch_mode}»...")
-            run_batch_assemble_job(
-                base_dir=o_dir,
-                output_dir=final_out_dir,
-                mode=batch_mode,
-                uniquify=uniquify,
-                is_subjob=True,
-            )
-
-    except Exception as exc:
-        push_hook_log(f"ОШИБКА: {exc}")
-        with LOCK:
-            HOOK_GEN_JOB.update(state="error", error=str(exc))
-
-
-def run_batch_assemble_job(base_dir: str, output_dir: str, mode: str = "soft",
-                           uniquify: bool = False, is_subjob: bool = False) -> None:
-    from .batch import run_batch
-    global HOOK_GEN_JOB
-    if not is_subjob:
-        with LOCK:
-            HOOK_GEN_JOB.update(state="running", percent=0.0, log=[], done=0, total=1, error=None)
-
-    push_hook_log(f"🚀 Сборка батча из «{base_dir}» -> «{output_dir}» (Режим: {mode}, Уникализация: {uniquify})")
-    try:
-        settings = Settings()
-        texts_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "texts.txt")
-        if not os.path.isfile(texts_file):
-            texts_file = None
-
-        res = run_batch(
-            base_dir=base_dir,
-            output_dir=output_dir,
-            settings=settings,
-            texts_file=texts_file,
-            uniquify=uniquify,
-            mode=mode,
+        gen = HookGenerator(
+            videos_dir=v_dir,
+            models_dir=m_dir,
+            model_photo=model_photo,
+            output_dir=o_dir,
+            anymessage_key=os.environ.get("ANYMESSAGE_KEY", "4daS8LEc7P3n0CEx2tuR5BuNiqEdOt4H"),
+            headless=not headed,
+            timeout_gen=timeout_gen,
+            max_retries=max_retries,
+            timeout_attempt=timeout_attempt,
+            nsfw_rotations=nsfw_rotations,
         )
-        push_hook_log(f"🎉 Успешно собрано роликов: {len(res)} в папку «{output_dir}»!")
-        if not is_subjob:
-            with LOCK:
-                HOOK_GEN_JOB.update(state="done", percent=100.0)
-    except Exception as exc:
-        push_hook_log(f"❌ Ошибка сборки батча: {exc}")
-        if not is_subjob:
-            with LOCK:
-                HOOK_GEN_JOB.update(state="error", error=str(exc))
+
+        # Итог строго N × M: M — фото моделей, N — генераций на фото.
+        real_total = max(1, len(gen.models) * gen_per_model)
+        MANAGER.progress(job, 0, real_total, failed=0, phase="генерация")
+        MANAGER.log(job, f"🚀 Генерация: {len(gen.models)} фото × {gen_per_model} = "
+                         f"{real_total} видео, воркеров: {workers}")
+        MANAGER.log(job, f"   Таймаут генерации {timeout_gen}с, попытки "
+                         f"{timeout_attempt}с, повторов {max_retries}, "
+                         f"ротаций при NSFW {nsfw_rotations}")
+
+        def progress_cb(done: int, total: int, message: str) -> None:
+            MANAGER.progress(job, done, total, phase="генерация")
+            MANAGER.log(job, message)
+
+        code = gen.run(
+            count=0,                      # 0 → run() сам считает N × M
+            workers=workers,
+            generations_per_model=gen_per_model,
+            cancel_event=job.cancel_event,
+            progress_callback=progress_cb,
+        )
+
+        if job.cancelled:
+            state, summary = CANCELLED, "⏹ Генерация отменена пользователем."
+        elif code == 0:
+            state, summary = DONE, "✅ Генерация завершена: собрано ровно N × M."
+        else:
+            state = ERROR
+            error = "Собрано меньше, чем N × M — подробности в логе"
+            summary = "⚠ Часть генераций не удалась. Смотри лог выше."
+
+    except Exception as exc:                            # noqa: BLE001
+        traceback.print_exc()
+        state, error = ERROR, str(exc)
+        summary = f"❌ ОШИБКА: {exc}"
+    finally:
+        # Слот освобождается всегда — гарантия «чистого состояния» (п. 6).
+        MANAGER.finalize(job, state, error=error, message=summary)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -319,8 +269,9 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/sysinfo":
                 return self._json(_collect_sysinfo())
             if url.path == "/api/generate_hooks_status":
-                with LOCK:
-                    return self._json({k: v for k, v in HOOK_GEN_JOB.items() if k != "proc"})
+                # Снимок из JobManager: состояние, прогресс, фаза и возраст
+                # heartbeat — UI видит, что задача жива, и никогда не «висит».
+                return self._json(MANAGER.snapshot())
             if url.path == "/api/status":
                 j = get_job(q.get("job", ""))
                 with LOCK:
@@ -379,59 +330,54 @@ class Handler(BaseHTTPRequestHandler):
             return self._error("Некорректный JSON")
 
         if url.path == "/api/generate_hooks":
-            with LOCK:
-                if HOOK_GEN_JOB.get("state") == "running":
-                    return self._error("Генерация или сборка хуков уже запущена")
-
-            count = int(payload.get("count") or 6)
-            workers = int(payload.get("workers") or 1)
-            gen_per_model = int(payload.get("generations_per_model") or 1)
+            workers = max(1, int(payload.get("workers") or 1))
+            gen_per_model = max(1, int(payload.get("generations_per_model") or 1))
             v_dir = (payload.get("videos_dir") or "./hook_refs").strip()
             m_dir = (payload.get("models_dir") or "./models").strip()
             o_dir = (payload.get("output_dir") or "./raw_batch/1").strip()
             model_photo = (payload.get("model_photo") or "").strip()
             headed = bool(payload.get("headed", True))
-            auto_assemble = bool(payload.get("auto_assemble", False))
-            batch_mode = (payload.get("batch_mode") or "soft").strip()
-            uniquify = bool(payload.get("uniquify", False))
-            final_out_dir = (payload.get("final_out_dir") or "./output").strip()
+            timeout_gen = max(30, int(payload.get("timeout_gen") or 300))
+            max_retries = min(3, max(0, int(payload.get("max_retries") or 2)))
+            timeout_attempt = max(timeout_gen + 60,
+                                  int(payload.get("timeout_attempt") or 900))
+            nsfw_rotations = min(10, max(0, int(payload.get("nsfw_rotations") or 3)))
+
+            # Атомарный захват слота: гонка двух одновременных «Старт»
+            # невозможна, повторный запуск не наложится на старую задачу.
+            job = MANAGER.try_start("hooks")
+            if job is None:
+                snap = MANAGER.snapshot()
+                return self._error(
+                    f"Задача уже выполняется (состояние: {snap.get('state')}). "
+                    f"Дождитесь завершения, нажмите «Остановить» или «Сбросить»."
+                )
 
             threading.Thread(
                 target=run_generate_hooks_job,
-                args=(count, workers, gen_per_model, v_dir, m_dir, o_dir, headed,
-                      model_photo, auto_assemble, batch_mode, uniquify, final_out_dir),
+                args=(job, workers, gen_per_model, v_dir, m_dir, o_dir, headed,
+                      model_photo, timeout_gen, max_retries, timeout_attempt,
+                      nsfw_rotations),
                 daemon=True,
             ).start()
-            return self._json({"ok": True, "count": count, "workers": workers})
-
-        if url.path == "/api/batch_assemble":
-            with LOCK:
-                if HOOK_GEN_JOB.get("state") == "running":
-                    return self._error("Процесс генерации или сборки уже запущен")
-
-            base_dir = (payload.get("base_dir") or "./raw_batch/1").strip()
-            output_dir = (payload.get("output_dir") or "./output").strip()
-            mode = (payload.get("batch_mode") or "soft").strip()
-            uniquify = bool(payload.get("uniquify", False))
-
-            threading.Thread(
-                target=run_batch_assemble_job,
-                args=(base_dir, output_dir, mode, uniquify, False),
-                daemon=True,
-            ).start()
-            return self._json({"ok": True, "mode": mode})
+            return self._json({"ok": True, "job_id": job.job_id,
+                               "workers": workers,
+                               "generations_per_model": gen_per_model})
 
         if url.path == "/api/stop_hooks":
-            with LOCK:
-                proc = HOOK_GEN_JOB.get("proc")
-                if proc:
-                    try:
-                        proc.terminate()
-                        push_hook_log("⏹ Процесс генерации остановлен пользователем.")
-                    except Exception as e:
-                        push_hook_log(f"⚠ Ошибка при остановке: {e}")
-                HOOK_GEN_JOB.update(state="idle", percent=0.0)
-            return self._json({"ok": True})
+            # Слот НЕ освобождаем здесь: это делает рабочий поток в finally.
+            # Иначе (как раньше) UI разблокировался бы, пока воркеры живы, и
+            # новая задача накладывалась бы на старую.
+            if not MANAGER.request_cancel():
+                return self._json({"ok": True, "message": "Активных задач нет."})
+            return self._json({"ok": True, "state": "cancelling",
+                               "message": "Отмена запрошена, останавливаю воркеры…"})
+
+        if url.path == "/api/reset_hooks":
+            # Аварийный выход в «Готов к новой задаче»: снимаем задачу,
+            # добиваем осиротевшие браузеры и чистим временные профили.
+            info = MANAGER.reset()
+            return self._json({"ok": True, "state": "idle", **info})
 
         if url.path == "/api/render":
             job = payload.get("job", "")
