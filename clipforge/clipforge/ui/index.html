@@ -142,7 +142,8 @@ details.sec[open]>summary::before{transform:rotate(90deg)}
       <div class="row">
         <label class="f"><span>Папка моделей</span>
           <input type="text" id="ghModelsDir" value="./models"></label>
-        <div></div>
+        <label class="f"><span>🔑 AnyMessage API Key</span>
+          <input type="text" id="ghAnymessageKey" value="4daS8LEc7P3n0CEx2tuR5BuNiqEdOt4H" placeholder="Ключ AnyMessage"></label>
       </div>
       <label class="chk"><input type="checkbox" id="ghHeaded" checked> Показывать окно Chrome (headed)</label>
       <div class="hint">
@@ -243,6 +244,7 @@ async function startGen(){
     models_dir:$('ghModelsDir').value,
     model_photo:modelPhoto,
     output_dir:$('ghOutputDir').value,
+    anymessage_key:$('ghAnymessageKey').value,
     headed:$('ghHeaded').checked,
     timeout_gen:tg,
     timeout_attempt:Math.max(tg+60,+$('ghTimeoutAttempt').value||900),

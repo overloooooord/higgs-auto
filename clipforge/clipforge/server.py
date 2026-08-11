@@ -24,7 +24,8 @@ def run_generate_hooks_job(job, workers: int, gen_per_model: int,
                            model_photo: str = "",
                            timeout_gen: int = 300, max_retries: int = 2,
                            timeout_attempt: int = 900,
-                           nsfw_rotations: int = 3) -> None:
+                           nsfw_rotations: int = 3,
+                           anymessage_key: str = "") -> None:
     """Рабочий поток генерации хуков.
 
     Состояние живёт в объекте `job`; слот менеджера освобождается в `finally`
@@ -36,12 +37,13 @@ def run_generate_hooks_job(job, workers: int, gen_per_model: int,
     try:
         from .generate_hooks import HookGenerator
 
+        key_to_use = (anymessage_key or "").strip() or os.environ.get("ANYMESSAGE_KEY", "4daS8LEc7P3n0CEx2tuR5BuNiqEdOt4H")
         gen = HookGenerator(
             videos_dir=v_dir,
             models_dir=m_dir,
             model_photo=model_photo,
             output_dir=o_dir,
-            anymessage_key=os.environ.get("ANYMESSAGE_KEY", "4daS8LEc7P3n0CEx2tuR5BuNiqEdOt4H"),
+            anymessage_key=key_to_use,
             headless=not headed,
             timeout_gen=timeout_gen,
             max_retries=max_retries,
@@ -210,6 +212,8 @@ class Handler(BaseHTTPRequestHandler):
                                   int(payload.get("timeout_attempt") or 900))
             nsfw_rotations = min(10, max(0, int(payload.get("nsfw_rotations") or 3)))
 
+            anymessage_key = (payload.get("anymessage_key") or "").strip()
+
             # Атомарный захват слота: гонка двух одновременных «Старт»
             # невозможна, повторный запуск не наложится на старую задачу.
             job = MANAGER.try_start("hooks")
@@ -224,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
                 target=run_generate_hooks_job,
                 args=(job, workers, gen_per_model, v_dir, m_dir, o_dir, headed,
                       model_photo, timeout_gen, max_retries, timeout_attempt,
-                      nsfw_rotations),
+                      nsfw_rotations, anymessage_key),
                 daemon=True,
             ).start()
             return self._json({"ok": True, "job_id": job.job_id,
