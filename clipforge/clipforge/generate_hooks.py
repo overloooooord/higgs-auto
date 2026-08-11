@@ -522,10 +522,14 @@ class HookGenerator:
         self.max_retries = max_retries
         self.nsfw_rotations = max(0, int(nsfw_rotations))
         self._file_lock = threading.Lock()
-        #: Контекст попытки на поток: дедлайн + событие отмены + JS-режим + heartbeat.
+        #: Контекст попытки на поток: дедлайн + событие отмены.
         #: HookGenerator один на все воркеры, поэтому контекст обязан быть
-        #: thread-local, иначе воркеры перетирают состояния и серцебиения друг друга.
+        #: thread-local, иначе воркеры перетирали бы дедлайны друг друга.
         self._ctx = threading.local()
+        #: Режим выполнения JS: None — не определён, True — CDP (без
+        #: верхнеуровневого return), False — классический WebDriver.
+        self._js_expr_mode: Optional[bool] = None
+        self._heartbeat_cb: Optional[Callable[[], None]] = None
 
     # ------------------------------------------------- контекст попытки
 
@@ -533,8 +537,6 @@ class HookGenerator:
                   cancel: Optional[threading.Event]) -> None:
         self._ctx.deadline = deadline
         self._ctx.cancel = cancel
-        self._ctx.js_expr_mode = None
-        self._ctx.heartbeat_cb = None
 
     @property
     def _deadline(self) -> Optional[Deadline]:
@@ -543,14 +545,6 @@ class HookGenerator:
     @property
     def _cancel(self) -> Optional[threading.Event]:
         return getattr(self._ctx, "cancel", None)
-
-    @property
-    def _js_expr_mode(self) -> Optional[bool]:
-        return getattr(self._ctx, "js_expr_mode", None)
-
-    @_js_expr_mode.setter
-    def _js_expr_mode(self, val: Optional[bool]) -> None:
-        self._ctx.js_expr_mode = val
 
     # ------------------------------------------------- ввод текста
 
@@ -589,7 +583,8 @@ class HookGenerator:
         падали переключатель Video/Image, выбор модели и загрузка файлов:
         сайт потом отвечал «Input Video Required».
 
-        Здесь режим определяется один раз на ПОТОК и запоминается.
+        Здесь режим определяется один раз и запоминается, после чего скрипт
+        отправляется в подходящей форме: с `return` либо как выражение.
         """
         expr = re.sub(r"^\s*return\s+", "", script, count=1)
 
@@ -637,13 +632,17 @@ class HookGenerator:
             return default
 
     def set_heartbeat(self, cb: Optional[Callable[[], None]]) -> None:
-        """Регистрирует колбэк «я жив», вызываемый на каждом шаге сценария в ТЕКУЩЕМ потоке."""
-        self._ctx.heartbeat_cb = cb
+        """Регистрирует колбэк «я жив», вызываемый на каждом шаге сценария.
+
+        Раньше активность отмечалась только при завершении задачи, поэтому
+        детектор зависания срабатывал через `timeout_attempt + 120` от старта,
+        а не от реального залипания.
+        """
+        self._heartbeat_cb = cb
 
     def _beat(self) -> None:
-        cb = getattr(self._ctx, "heartbeat_cb", None)
+        cb = getattr(self, "_heartbeat_cb", None)
         if cb is not None:
-            cb()
             try:
                 cb()
             except Exception:                               # noqa: BLE001
@@ -942,30 +941,56 @@ class HookGenerator:
         email = email_client.get_temp_email()
         print(f"  📧 Email: {email}")
 
-        # Navigate to Higgsfield with UC anti-detection
-        sb.uc_open_with_reconnect(HOME_URL, reconnect_time=1)
-        self._wait(1)
+        # Navigate to Higgsfield with UC anti-detection.
+        # reconnect_time=4 gives Cloudflare Turnstile time to auto-solve.
+        sb.uc_open_with_reconnect(HOME_URL, reconnect_time=4)
+        self._wait(2)
 
-        # Step 1: Wait for "Sign up" button to appear in DOM, then click immediately via JS
-        # (don't use sb.click — it blocks until document.readyState=complete which is slow)
+        # Wait for page to be past Cloudflare (body text must contain site content)
+        print("  ⏳ Waiting for Higgsfield to load past Cloudflare…")
+        for _cf in range(15):
+            self._guard("ожидание CF")
+            try:
+                body_txt = self._js(sb, "return (document.body.innerText||'').substring(0,400)") or ""
+                if ("Sign up" in body_txt or "Sign in" in body_txt
+                        or "Generate" in body_txt or "Higgsfield" in body_txt):
+                    break
+            except Exception:
+                pass
+            self._wait(1)
+
+        # Step 1: Click "Sign up" — retry every second because Clerk loads async
         print("  ⏳ Waiting for Sign up button...")
-        self._js(sb, """
-            (function poll() {
+        signup_clicked = False
+        for _si in range(20):
+            self._guard("клик Sign up")
+            clicked = self._js(sb, """return (function(){
                 var btns = document.querySelectorAll('button, a');
                 for (var b of btns) {
                     if (b.textContent.trim().includes('Sign up') && b.offsetHeight > 0) {
-                        b.click();
-                        return;
+                        b.click(); return true;
                     }
                 }
-                setTimeout(poll, 200);
-            })();
-        """)
-        print("  ✓ Clicked Sign up (JS polling, no page-load wait)")
+                return false;
+            })()""")
+            if clicked:
+                signup_clicked = True
+                print("  ✓ Clicked Sign up")
+                break
+            self._wait(1)
 
-        # Wait for Clerk modal to appear
+        if not signup_clicked:
+            # Page may already be logged in or Cloudflare is still blocking
+            body_now = self._js(sb, "return (document.body.innerText||'').substring(0,400)") or ""
+            if "Generate" in body_now or "Motion" in body_now:
+                print("  ✓ Already logged in — skipping Sign up")
+                return email
+            raise RuntimeError("Sign up button not found after 20s — Cloudflare or page error")
+
+        # Step 2: Wait for Clerk modal (up to 25 attempts, retrying click if needed)
         modal_ok = False
-        for wait_i in range(12):
+        for wait_i in range(25):
+            self._guard("ожидание modal")
             modal_open = self._js(sb, """return (function(){
                 var txt = document.body.innerText || '';
                 if (txt.includes('Continue with Email') || txt.includes('Welcome to Higgsfield')
@@ -983,10 +1008,21 @@ class HookGenerator:
                 modal_ok = True
                 print(f"  ✓ Clerk modal appeared (wait {wait_i}s)")
                 break
+            # Re-click Sign up every 5s in case modal was dismissed by Cloudflare
+            if wait_i > 0 and wait_i % 5 == 0:
+                self._js(sb, """(function(){
+                    var btns = document.querySelectorAll('button, a');
+                    for (var b of btns) {
+                        if (b.textContent.trim().includes('Sign up') && b.offsetHeight > 0) {
+                            b.click(); return;
+                        }
+                    }
+                })()""")
+                print(f"  ↻ Re-clicked Sign up (wait {wait_i}s)")
             self._wait(1)
 
         if not modal_ok:
-            raise RuntimeError("Clerk modal did not appear after 15 attempts")
+            raise RuntimeError("Clerk modal did not appear after 25 attempts")
 
         # Step 2: Click "Continue with Email" button → reveals email + password fields
         print("  ⏳ Clicking 'Continue with Email'...")
@@ -2837,11 +2873,23 @@ class HookGenerator:
         
         @contextlib.contextmanager
         def sb_factory(profile_dir: str, port: int, headless: bool):
-            with sb_init_lock:
+            # Check cancel BEFORE waiting for the lock — if user pressed Stop
+            # or Reset while we're queued, bail out immediately.
+            if cancel.is_set():
+                raise Cancelled("отмена перед запуском браузера")
+            # Use timeout so we don't block forever if another worker hangs
+            # during browser init.
+            if not sb_init_lock.acquire(timeout=60):
+                raise RuntimeError("Таймаут ожидания инициализации браузера")
+            try:
+                if cancel.is_set():
+                    raise Cancelled("отмена во время ожидания блокировки")
                 ctx = SB(uc=True, headless2=headless, locale="en",
                           disable_csp=True, user_data_dir=profile_dir,
                           chromium_arg=f"--remote-debugging-port={port}")
                 sb = ctx.__enter__()
+            finally:
+                sb_init_lock.release()
             try:
                 yield sb
             finally:
@@ -3008,17 +3056,16 @@ class HookGenerator:
 
         # ---- Воркер ----------------------------------------------------
         def worker(wid: int) -> None:
-            # Ступенчатый запуск воркеров (0с, 4с, 8с...), чтобы браузеры не кликали
-            # Cloudflare Turnstile и регистрацию Clerk в одну и ту же миллисекунду.
-            if wid > 1:
-                stagger_sec = (wid - 1) * 4.0
-                _tprint(f"  [W{wid}] ⏳ Ступенчатый старт: пауза {stagger_sec:.1f}с...")
-                interruptible_wait(stagger_sec, cancel=cancel, phase="старт воркера")
-
             while not cancel.is_set():
                 try:
                     task = task_queue.get(timeout=1.0)
                 except queue.Empty:
+                    break
+
+                # If cancelled while waiting in queue, drain and exit.
+                if cancel.is_set():
+                    task.status = TaskStatus.SKIPPED
+                    task_queue.task_done()
                     break
 
                 try:
@@ -3056,21 +3103,35 @@ class HookGenerator:
                            f"→ {status.name} (успех={done}, провал={failed})")
 
                     if need_backfill:
-                        # Строгое N × M: вместо «пропустить и потерять» ставим
-                        # замещающую задачу с другим хуком для этой же модели.
                         extra = make_task(task.model_photo, backfill=True)
                         task_queue.put(extra)
                         report(f"♻ Добор до N×M: новая задача {extra.task_id} "
                                f"для {os.path.basename(task.model_photo)}")
 
                 except Exception as exc:                        # noqa: BLE001
-                    # Ни одна ошибка не должна убивать воркер и всю очередь.
                     _tprint(f"  [W{wid}] ⚠ необработанная ошибка воркера: {exc}")
                     traceback.print_exc()
                 finally:
                     task_queue.task_done()
 
+            # Drain remaining tasks on cancel so other workers don't pick them.
+            while not task_queue.empty():
+                try:
+                    leftover = task_queue.get_nowait()
+                    leftover.status = TaskStatus.SKIPPED
+                    task_queue.task_done()
+                except queue.Empty:
+                    break
+
         # ---- Запуск пула ------------------------------------------------
+        # Register kill_all_active with the job manager so that reset()
+        # can force-close browsers even when the run() function hasn't
+        # returned yet.  This is the fix for "reset doesn't stop browsers".
+        from .jobs import MANAGER
+        current_job = MANAGER.current()
+        if current_job is not None:
+            MANAGER.register_killer(current_job, lambda: kill_all_active("reset"))
+
         threads: list[threading.Thread] = []
         for wid in range(1, effective_workers + 1):
             t = threading.Thread(target=worker, args=(wid,), daemon=True,
