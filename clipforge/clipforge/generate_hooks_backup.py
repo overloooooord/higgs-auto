@@ -261,16 +261,30 @@ class AnyMessageClient:
         return json.loads(body or "{}")
 
     def get_temp_email(self, domain: str = "") -> str:
-        res = self._req("GET", "/email/order",
-                        {"site": self.site, "domain": domain or self.domain})
-        if res.get("status") != "success":
-            raise RuntimeError(f"AnyMessage error: {res}")
-        email = res.get("email") or ""
-        self._email = email
-        self._email_id = str(res.get("id") or email)
-        if not email:
-            raise RuntimeError(f"AnyMessage no email: {res}")
-        return email
+        preferred = domain or self.domain
+        fallback_domains = [preferred, "gmail.com", "icloud.com", "rambler.ru", "yandex.ru", "hotmail.com", "outlook.com"]
+        candidate_domains = list(dict.fromkeys([d for d in fallback_domains if d]))
+
+        last_error = None
+        for attempt in range(3):
+            for d in candidate_domains:
+                try:
+                    res = self._req("GET", "/email/order",
+                                    {"site": self.site, "domain": d})
+                    if res.get("status") == "success" and res.get("email"):
+                        email = res.get("email")
+                        self._email = email
+                        self._email_id = str(res.get("id") or email)
+                        print(f"  📧 AnyMessage email ordered ({d}): {email}")
+                        return email
+                    else:
+                        print(f"  [AnyMessage] domain {d} error: {res}")
+                        last_error = res
+                except Exception as exc:
+                    last_error = exc
+            time.sleep(2)
+
+        raise RuntimeError(f"AnyMessage error: {last_error}")
 
     def get_otp_code(self, timeout_sec: int = 180, poll: float = 5.0,
                      cancel: Optional[threading.Event] = None,
