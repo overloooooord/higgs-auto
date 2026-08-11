@@ -1,1820 +1,346 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ClipForge — автомонтаж роликов</title>
-  <style>
-    :root {
-      --bg: #0a0c11;
-      --panel: #12161f;
-      --panel-2: #171d29;
-      --line: #232b3a;
-      --text: #e7ecf6;
-      --muted: #8b95ab;
-      --accent: #6d5efc;
-      --accent-2: #21d4fd;
-      --ok: #28c76f;
-      --warn: #ffab3f;
-      --err: #ff5c6c;
-      --radius: 14px;
-    }
-
-    * {
-      box-sizing: border-box
-    }
-
-    html,
-    body {
-      margin: 0;
-      padding: 0
-    }
-
-    body {
-      background: radial-gradient(1200px 600px at 15% -10%, #1b1740 0%, transparent 55%),
-        radial-gradient(900px 500px at 100% 0%, #062b3a 0%, transparent 50%), var(--bg);
-      color: var(--text);
-      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    a {
-      color: var(--accent-2)
-    }
-
-    .wrap {
-      max-width: 1360px;
-      margin: 0 auto;
-      padding: 28px 24px 140px
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 26px;
-      flex-wrap: wrap
-    }
-
-    .logo {
-      width: 44px;
-      height: 44px;
-      border-radius: 13px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      display: grid;
-      place-items: center;
-      font-size: 22px;
-      box-shadow: 0 8px 30px rgba(109, 94, 252, .35)
-    }
-
-    h1 {
-      font-size: 21px;
-      margin: 0;
-      letter-spacing: -.02em
-    }
-
-    .sub {
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 2px
-    }
-
-    .badge {
-      margin-left: auto;
-      font-size: 12px;
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      padding: 7px 12px;
-      border-radius: 999px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      max-width: 100%;
-      overflow: hidden
-    }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--muted);
-      flex: none
-    }
-
-    .dot.ok {
-      background: var(--ok);
-      box-shadow: 0 0 10px var(--ok)
-    }
-
-    .dot.err {
-      background: var(--err);
-      box-shadow: 0 0 10px var(--err)
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(340px, .85fr);
-      gap: 22px;
-      align-items: start
-    }
-
-    @media(max-width:1080px) {
-      .grid {
-        grid-template-columns: 1fr
-      }
-    }
-
-    .card {
-      background: linear-gradient(180deg, var(--panel), #0f131b);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 18px
-    }
-
-    .card+.card {
-      margin-top: 18px
-    }
-
-    .card h2 {
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: .09em;
-      color: var(--muted);
-      margin: 0 0 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px
-    }
-
-    .card h2 .num {
-      width: 22px;
-      height: 22px;
-      border-radius: 7px;
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      display: grid;
-      place-items: center;
-      font-size: 11px;
-      color: var(--text)
-    }
-
-    /* ------- слоты ------- */
-    .dropall {
-      border: 1.5px dashed var(--line);
-      border-radius: 12px;
-      padding: 14px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 16px;
-      transition: .15s;
-      cursor: pointer
-    }
-
-    .dropall.hot {
-      border-color: var(--accent);
-      color: var(--text);
-      background: rgba(109, 94, 252, .08)
-    }
-
-    .slots {
-      display: flex;
-      flex-direction: column;
-      gap: 12px
-    }
-
-    .slot {
-      display: grid;
-      grid-template-columns: 104px minmax(0, 1fr);
-      gap: 14px;
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 12px;
-      transition: .15s;
-      position: relative;
-      overflow: hidden
-    }
-
-    .slot.hot {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(109, 94, 252, .15)
-    }
-
-    .slot.filled {
-      border-color: #2b3a52
-    }
-
-    .thumb {
-      width: 104px;
-      height: 74px;
-      border-radius: 9px;
-      background: #0b0e14 center/cover no-repeat;
-      border: 1px solid var(--line);
-      display: grid;
-      place-items: center;
-      color: #39425a;
-      font-size: 26px;
-      cursor: pointer;
-      flex: none
-    }
-
-    .slot .idx {
-      position: absolute;
-      left: 8px;
-      top: 8px;
-      background: rgba(10, 12, 17, .82);
-      border: 1px solid var(--line);
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 6px;
-      color: var(--muted)
-    }
-
-    .slot-main {
-      min-width: 0
-    }
-
-    .slot-title {
-      font-weight: 600;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap
-    }
-
-    .slot-title code {
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 400;
-      background: #0d1017;
-      padding: 2px 6px;
-      border-radius: 5px
-    }
-
-    .meta {
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis
-    }
-
-    .meta b {
-      color: #c6d0e4;
-      font-weight: 600
-    }
-
-    .cap {
-      margin-top: 8px;
-      width: 100%
-    }
-
-    .pill {
-      font-size: 10px;
-      padding: 2px 7px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      color: var(--muted)
-    }
-
-    .pill.a {
-      color: var(--ok);
-      border-color: rgba(40, 199, 111, .4)
-    }
-
-    /* ------- формы ------- */
-    label.f {
-      display: block;
-      margin-bottom: 12px
-    }
-
-    label.f>span {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 5px;
-      gap: 8px
-    }
-
-    label.f>span b {
-      color: var(--text);
-      font-weight: 600;
-      font-variant-numeric: tabular-nums
-    }
-
-    input[type=text],
-    input[type=number],
-    select,
-    textarea {
-      width: 100%;
-      background: #0c1017;
-      border: 1px solid var(--line);
-      color: var(--text);
-      border-radius: 9px;
-      padding: 9px 11px;
-      font: inherit;
-      font-size: 13px;
-      outline: none;
-      transition: .15s
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(109, 94, 252, .14)
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 78px;
-      line-height: 1.45
-    }
-
-    input[type=range] {
-      width: 100%;
-      accent-color: var(--accent);
-      background: transparent
-    }
-
-    input[type=color] {
-      width: 100%;
-      height: 36px;
-      padding: 2px;
-      background: #0c1017;
-      border: 1px solid var(--line);
-      border-radius: 9px
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px
-    }
-
-    .row3 {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px
-    }
-
-    .seg {
-      display: flex;
-      background: #0c1017;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      padding: 3px;
-      gap: 3px
-    }
-
-    .seg button {
-      flex: 1;
-      background: transparent;
-      border: 0;
-      color: var(--muted);
-      padding: 7px 6px;
-      border-radius: 7px;
-      font: inherit;
-      font-size: 12px;
-      cursor: pointer;
-      transition: .12s;
-      white-space: nowrap
-    }
-
-    .seg button.on {
-      background: linear-gradient(135deg, var(--accent), #8b7cff);
-      color: #fff;
-      font-weight: 600
-    }
-
-    .chk {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      font-size: 13px;
-      color: #c6d0e4;
-      margin-bottom: 12px;
-      cursor: pointer
-    }
-
-    .chk input {
-      width: 16px;
-      height: 16px;
-      accent-color: var(--accent)
-    }
-
-    .hint {
-      font-size: 11.5px;
-      color: var(--muted);
-      margin: -6px 0 12px;
-      line-height: 1.45
-    }
-
-    details.sec {
-      border-top: 1px solid var(--line);
-      padding-top: 14px;
-      margin-top: 6px
-    }
-
-    details.sec>summary {
-      cursor: pointer;
-      font-size: 12px;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 14px;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 8px
-    }
-
-    details.sec>summary::-webkit-details-marker {
-      display: none
-    }
-
-    details.sec>summary::before {
-      content: "›";
-      transition: .2s;
-      display: inline-block;
-      font-size: 16px
-    }
-
-    details.sec[open]>summary::before {
-      transform: rotate(90deg)
-    }
-
-    /* ------- превью текста ------- */
-    .preview {
-      position: relative;
-      width: 100%;
-      max-width: 230px;
-      margin: 0 auto 6px;
-      aspect-ratio: 9/16;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      background: #0b0e14 center/cover no-repeat
-    }
-
-    .preview.wide {
-      aspect-ratio: 16/9;
-      max-width: 100%
-    }
-
-    .preview::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      box-shadow: inset 0 0 60px rgba(0, 0, 0, .5);
-      pointer-events: none
-    }
-
-    .pv-text {
-      position: absolute;
-      left: 6%;
-      right: 6%;
-      text-align: center;
-      font-weight: 700;
-      line-height: 1.2;
-      word-break: break-word;
-      white-space: pre-wrap;
-      padding: 5px 8px;
-      border-radius: 6px
-    }
-
-    /* ------- футер ------- */
-    .footer {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(10, 12, 17, .92);
-      backdrop-filter: blur(14px);
-      border-top: 1px solid var(--line);
-      padding: 14px 24px;
-      z-index: 20
-    }
-
-    .footer-in {
-      max-width: 1360px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap
-    }
-
-    .btn {
-      border: 0;
-      border-radius: 11px;
-      padding: 13px 26px;
-      font: inherit;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #08111a;
-      transition: .15s;
-      white-space: nowrap
-    }
-
-    .btn:hover {
-      filter: brightness(1.08);
-      transform: translateY(-1px)
-    }
-
-    .btn:disabled {
-      opacity: .45;
-      cursor: not-allowed;
-      transform: none;
-      filter: none
-    }
-
-    .btn.ghost {
-      background: transparent;
-      border: 1px solid var(--line);
-      color: var(--text)
-    }
-
-    .progress {
-      flex: 1;
-      min-width: 220px
-    }
-
-    .bar {
-      height: 8px;
-      background: #0c1017;
-      border-radius: 99px;
-      overflow: hidden;
-      border: 1px solid var(--line)
-    }
-
-    .bar i {
-      display: block;
-      height: 100%;
-      width: 0;
-      border-radius: 99px;
-      background: linear-gradient(90deg, var(--accent), var(--accent-2));
-      transition: width .35s
-    }
-
-    .status {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 6px;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px
-    }
-
-    .status .s {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis
-    }
-
-    /* ------- результат ------- */
-    #result {
-      display: none
-    }
-
-    #result.on {
-      display: block
-    }
-
-    video {
-      width: 100%;
-      max-height: 62vh;
-      border-radius: 12px;
-      background: #000;
-      border: 1px solid var(--line)
-    }
-
-    .stats {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 14px 0
-    }
-
-    .stat {
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 9px 14px;
-      min-width: 104px
-    }
-
-    .stat b {
-      display: block;
-      font-size: 18px;
-      letter-spacing: -.02em
-    }
-
-    .stat span {
-      font-size: 11px;
-      color: var(--muted)
-    }
-
-    table.plan {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12.5px;
-      margin-top: 6px
-    }
-
-    table.plan th,
-    table.plan td {
-      text-align: left;
-      padding: 7px 8px;
-      border-bottom: 1px solid var(--line)
-    }
-
-    table.plan th {
-      color: var(--muted);
-      font-weight: 500;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: .06em
-    }
-
-    .log {
-      background: #080a0f;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 11px 13px;
-      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: #9fb0c9;
-      max-height: 210px;
-      overflow: auto;
-      white-space: pre-wrap
-    }
-
-    .err-box {
-      border-color: rgba(255, 92, 108, .5);
-      color: #ffb3ba;
-      background: rgba(255, 92, 108, .07)
-    }
-
-    .toast {
-      position: fixed;
-      bottom: 96px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      padding: 11px 18px;
-      border-radius: 11px;
-      font-size: 13px;
-      z-index: 40;
-      opacity: 0;
-      pointer-events: none;
-      transition: .25s
-    }
-
-    .toast.on {
-      opacity: 1;
-      transform: translateX(-50%) translateY(-6px)
-    }
-
-    /* ------- конфиг проекта ------- */
-    .cfg-section {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      margin-bottom: 10px;
-      overflow: hidden;
-      transition: .15s
-    }
-
-    .cfg-section:last-child {
-      margin-bottom: 0
-    }
-
-    .cfg-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 11px 14px;
-      cursor: pointer;
-      background: var(--panel-2);
-      transition: .12s;
-      user-select: none
-    }
-
-    .cfg-header:hover {
-      background: rgba(109, 94, 252, .06)
-    }
-
-    .cfg-icon {
-      font-size: 18px;
-      flex: none;
-      width: 24px;
-      text-align: center
-    }
-
-    .cfg-title {
-      font-size: 13px;
-      font-weight: 600;
-      flex: 1;
-      min-width: 0
-    }
-
-    .cfg-badge {
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-weight: 600;
-      white-space: nowrap
-    }
-
-    .cfg-badge.ok {
-      background: rgba(40, 199, 111, .15);
-      color: var(--ok)
-    }
-
-    .cfg-badge.empty {
-      background: rgba(255, 171, 63, .12);
-      color: var(--warn)
-    }
-
-    .cfg-badge.missing {
-      background: rgba(255, 92, 108, .12);
-      color: var(--err)
-    }
-
-    .cfg-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex: none
-    }
-
-    .cfg-dot.ok {
-      background: var(--ok);
-      box-shadow: 0 0 6px rgba(40, 199, 111, .5)
-    }
-
-    .cfg-dot.empty {
-      background: var(--warn);
-      box-shadow: 0 0 6px rgba(255, 171, 63, .4)
-    }
-
-    .cfg-dot.missing {
-      background: var(--err);
-      box-shadow: 0 0 6px rgba(255, 92, 108, .4)
-    }
-
-    .cfg-body {
-      display: none;
-      padding: 0 14px 12px;
-      font-size: 12px;
-      color: var(--muted)
-    }
-
-    .cfg-section.open .cfg-body {
-      display: block
-    }
-
-    .cfg-path {
-      font-size: 11px;
-      color: #5a6580;
-      margin: 6px 0 8px;
-      word-break: break-all
-    }
-
-    .cfg-files {
-      list-style: none;
-      padding: 0;
-      margin: 0
-    }
-
-    .cfg-files li {
-      display: flex;
-      justify-content: space-between;
-      padding: 4px 0;
-      border-bottom: 1px solid rgba(35, 43, 58, .4)
-    }
-
-    .cfg-files li:last-child {
-      border: 0
-    }
-
-    .cfg-files .fname {
-      color: var(--text);
-      font-weight: 500;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      min-width: 0;
-      flex: 1
-    }
-
-    .cfg-files .fsize {
-      color: var(--muted);
-      white-space: nowrap;
-      margin-left: 8px
-    }
-
-    .cfg-items {
-      list-style: none;
-      padding: 0;
-      margin: 0
-    }
-
-    .cfg-items li {
-      padding: 3px 0;
-      border-bottom: 1px solid rgba(35, 43, 58, .3);
-      color: #c6d0e4;
-      font-size: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis
-    }
-
-    .cfg-items li:last-child {
-      border: 0
-    }
-
-    .cfg-batch {
-      display: flex;
-      gap: 10px;
-      padding: 5px 0;
-      border-bottom: 1px solid rgba(35, 43, 58, .3);
-      align-items: center
-    }
-
-    .cfg-batch:last-child {
-      border: 0
-    }
-
-    .cfg-batch .bname {
-      font-weight: 600;
-      color: var(--text);
-      min-width: 40px
-    }
-
-    .cfg-batch .btag {
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 5px;
-      background: #0d1017;
-      color: var(--muted)
-    }
-
-    .cfg-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--accent-2);
-      margin-top: 12px;
-      border: 0;
-      background: 0;
-      font: inherit;
-      padding: 0
-    }
-
-    .cfg-toggle:hover {
-      color: var(--text)
-    }
-
-    .cfg-loading {
-      text-align: center;
-      padding: 16px;
-      color: var(--muted);
-      font-size: 13px
-    }
-
-    .cfg-arrow {
-      font-size: 14px;
-      transition: .2s;
-      flex: none;
-      color: var(--muted)
-    }
-
-    .cfg-section.open .cfg-arrow {
-      transform: rotate(90deg)
-    }
-
-    /* ------- табы текста по этапам ------- */
-    .stabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 10px;
-      flex-wrap: wrap
-    }
-
-    .stab {
-      flex: 1;
-      min-width: 0;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 6px 4px;
-      font: inherit;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      background: #0c1017;
-      color: var(--muted);
-      transition: .15s;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis
-    }
-
-    .stab:hover {
-      border-color: #4a5568;
-      color: var(--text)
-    }
-
-    .stab.on {
-      background: linear-gradient(135deg, var(--accent), #8b7cff);
-      color: #fff;
-      border-color: transparent
-    }
-
-    .stab.has {
-      border-color: rgba(109, 94, 252, .5);
-      color: var(--accent-2)
-    }
-
-    .stab.on.has {
-      border-color: transparent
-    }
-
-    .stage-text-panels>div {
-      display: none
-    }
-
-    .stage-text-panels>div.on {
-      display: block
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClipForge — AI-генерация хуков</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0c11;--panel:#12161f;--panel2:#171d29;--line:#232b3a;--text:#e7ecf6;--muted:#8b95ab;--accent:#6d5efc;--accent2:#21d4fd;--ok:#28c76f;--warn:#ffab3f;--err:#ff5c6c;--r:14px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(1200px 600px at 15% -10%,#1b1740 0%,transparent 55%),radial-gradient(900px 500px at 100% 0%,#062b3a 0%,transparent 50%),var(--bg);color:var(--text);font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
+a{color:var(--accent2)}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 24px 60px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:26px}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:22px;box-shadow:0 8px 30px rgba(109,94,252,.35)}
+h1{font-size:21px;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+.card{background:linear-gradient(180deg,var(--panel),#0f131b);border:1px solid var(--line);border-radius:var(--r);padding:20px;margin-bottom:18px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 16px;display:flex;align-items:center;gap:10px}
+.card h2 .ic{font-size:18px}
+label.f{display:block;margin-bottom:14px}
+label.f>span{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;gap:8px}
+label.f>span b{color:var(--text);font-weight:600}
+input[type=text],input[type=number],select{width:100%;background:#0c1017;border:1px solid var(--line);color:var(--text);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px;outline:none;transition:.15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(109,94,252,.14)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.chk{display:flex;align-items:center;gap:9px;font-size:13px;color:#c6d0e4;margin-bottom:12px;cursor:pointer}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+.hint{font-size:11.5px;color:var(--muted);margin:-6px 0 12px;line-height:1.45}
+details.sec{border-top:1px solid var(--line);padding-top:14px;margin-top:6px}
+details.sec>summary{cursor:pointer;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;list-style:none;display:flex;align-items:center;gap:8px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::before{content:"›";transition:.2s;display:inline-block;font-size:16px}
+details.sec[open]>summary::before{transform:rotate(90deg)}
+.btn{border:0;border-radius:11px;padding:13px 26px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#08111a;transition:.15s;white-space:nowrap}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none;filter:none}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+.btn.ghost:hover{border-color:var(--accent)}
+.btn.sm{padding:8px 16px;font-size:12px;border-radius:8px}
+.bar{height:8px;background:#0c1017;border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s}
+.status{font-size:12px;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between;gap:12px}
+.log{background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#9fb0c9;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.err-box{border-color:rgba(255,92,108,.5);color:#ffb3ba;background:rgba(255,92,108,.07)}
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:11px 18px;border-radius:11px;font-size:13px;z-index:40;opacity:0;pointer-events:none;transition:.25s}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-6px)}
+/* model cards */
+.model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:14px}
+.model-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;align-items:center;gap:10px;transition:.15s;cursor:default}
+.model-card.excluded{opacity:.4;border-color:#333}
+.model-card .m-thumb{width:42px;height:42px;border-radius:8px;background:#0b0e14;border:1px solid var(--line);display:grid;place-items:center;font-size:20px;flex:none;overflow:hidden}
+.model-card .m-info{flex:1;min-width:0}
+.model-card .m-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-card .m-size{font-size:10px;color:var(--muted)}
+.model-card .m-toggle{width:36px;height:20px;border-radius:10px;background:#333;border:0;cursor:pointer;position:relative;transition:.2s;flex:none}
+.model-card .m-toggle.on{background:var(--ok)}
+.model-card .m-toggle::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+.model-card .m-toggle.on::after{left:18px}
+/* config sections */
+.cfg-section{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.cfg-header{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;background:var(--panel2);transition:.12s;user-select:none}
+.cfg-header:hover{background:rgba(109,94,252,.06)}
+.cfg-icon{font-size:18px;flex:none;width:24px;text-align:center}
+.cfg-title{font-size:13px;font-weight:600;flex:1;min-width:0}
+.cfg-badge{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.cfg-badge.ok{background:rgba(40,199,111,.15);color:var(--ok)}
+.cfg-badge.empty{background:rgba(255,171,63,.12);color:var(--warn)}
+.cfg-badge.missing{background:rgba(255,92,108,.12);color:var(--err)}
+.cfg-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.cfg-dot.ok{background:var(--ok);box-shadow:0 0 6px rgba(40,199,111,.5)}
+.cfg-dot.empty{background:var(--warn);box-shadow:0 0 6px rgba(255,171,63,.4)}
+.cfg-dot.missing{background:var(--err);box-shadow:0 0 6px rgba(255,92,108,.4)}
+.cfg-body{display:none;padding:0 14px 12px;font-size:12px;color:var(--muted)}
+.cfg-section.open .cfg-body{display:block}
+.cfg-path{font-size:11px;color:#5a6580;margin:6px 0 8px;word-break:break-all}
+.cfg-files{list-style:none;padding:0;margin:0}
+.cfg-files li{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(35,43,58,.4)}
+.cfg-files li:last-child{border:0}
+.cfg-files .fname{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.cfg-files .fsize{color:var(--muted);white-space:nowrap;margin-left:8px}
+.cfg-items li{padding:3px 0;border-bottom:1px solid rgba(35,43,58,.3);color:#c6d0e4;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cfg-items li:last-child{border:0}
+.cfg-batch{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(35,43,58,.3);align-items:center}
+.cfg-batch:last-child{border:0}
+.cfg-batch .bname{font-weight:600;color:var(--text);min-width:40px}
+.cfg-batch .btag{font-size:10px;padding:1px 6px;border-radius:5px;background:#0d1017;color:var(--muted)}
+.cfg-arrow{font-size:14px;transition:.2s;flex:none;color:var(--muted)}
+.cfg-section.open .cfg-arrow{transform:rotate(90deg)}
+</style>
 </head>
-
 <body>
-  <div class="wrap">
-    <header>
-      <div class="logo">◈</div>
-      <div>
-        <h1>ClipForge</h1>
-        <div class="sub">Автомонтаж ролика из 5 исходников: обрезка пауз, ускорение, склейка, текст</div>
+<div class="wrap">
+  <header>
+    <div class="logo">◈</div>
+    <div><h1>ClipForge</h1><div class="sub">AI-генерация хуков через Higgsfield</div></div>
+  </header>
+
+  <div class="card">
+    <h2><span class="ic">⚡</span>Генерация AI-Хуков</h2>
+
+    <div id="modelCardsWrap" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Модели для генерации</span>
+        <span style="font-size:11px;color:var(--accent2)" id="modelCountLabel">загрузка…</span>
       </div>
-      <div class="badge"><span class="dot" id="ffdot"></span><span id="ffver">проверяю ffmpeg…</span></div>
-    </header>
+      <div class="model-grid" id="modelGrid"></div>
+    </div>
 
-    <div class="grid">
-      <!-- ЛЕВАЯ КОЛОНКА -->
-      <div>
-        <div class="card">
-          <h2><span class="num">1</span>Исходники — порядок склейки задан ТЗ</h2>
-          <div class="dropall" id="dropall">
-            Перетащите сюда сразу все файлы — разложу по этапам по именам (hooks…, payout…) или по порядку
-          </div>
-          <input type="file" id="fileAll" accept="video/*" multiple hidden>
-          <input type="file" id="fileOne" accept="video/*" hidden>
-          <div class="slots" id="slots"></div>
-        </div>
+    <div class="row">
+      <label class="f"><span>Кол-во видео на 1 модель (N)</span>
+        <input type="number" id="ghGenPerModel" min="1" max="50" value="1" oninput="updateCalc()"></label>
+      <label class="f"><span>Потоков браузера (workers)</span>
+        <input type="number" id="ghWorkers" min="1" max="20" value="1"></label>
+    </div>
+    <div class="hint" id="ghCalcHint" style="margin-top:-6px;margin-bottom:14px;color:var(--accent2)">
+      🎯 Итого: — видео
+    </div>
 
-        <div class="card" id="result">
-          <h2><span class="num">✓</span>Результат</h2>
-          <video id="player" controls playsinline></video>
-          <div class="stats" id="stats"></div>
-          <table class="plan" id="plan"></table>
-          <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
-            <button class="btn" id="download">Скачать MP4</button>
-            <button class="btn ghost" id="again">Пересобрать с новыми настройками</button>
-          </div>
-        </div>
+    <div class="row">
+      <label class="f"><span>Папка сохранения</span>
+        <input type="text" id="ghOutputDir" value="./raw_batch/1"></label>
+      <label class="f"><span>⏱ Таймаут генерации (сек)</span>
+        <input type="number" id="ghTimeoutGen" min="30" max="1800" value="300"></label>
+    </div>
 
-        <div class="card">
-          <h2><span class="num">…</span>Лог сборки</h2>
-          <div class="log" id="log">Готов к работе.</div>
-        </div>
-
-        <div class="card" id="hooksGeneratorCard">
-          <h2><span class="num">⚡</span>Генерация AI-Хуков (Higgsfield)</h2>
-
-          <div class="row">
-            <label class="f"><span>Выбор фото модели</span>
-              <select id="ghModelPhoto" onchange="updateCalculatedHookCount()">
-                <option value="">Все модели из папки models/</option>
-              </select></label>
-            <label class="f"><span>Кол-во генераций на 1 модель (N)</span>
-              <input type="number" id="ghGenPerModel" min="1" max="50" value="1"
-                oninput="updateCalculatedHookCount()"></label>
-          </div>
-
-          <div class="row">
-            <label class="f"><span>Потоков браузера (--workers)</span>
-              <input type="number" id="ghWorkers" min="1" max="20" value="1"></label>
-            <label class="f"><span>Папка сохранения хуков</span>
-              <input type="text" id="ghOutputDir" value="./raw_batch/1"></label>
-          </div>
-          <div class="hint" id="ghCalculatedHint" style="margin-top:-6px;margin-bottom:12px;color:var(--accent-2)">
-            🎯 Расчёт: 1 модель × 1 хук = 1 видео
-          </div>
-
-          <div class="row">
-            <label class="f"><span>⏱ Таймаут генерации (сек)</span>
-              <input type="number" id="ghTimeoutGen" min="30" max="1800" value="300"></label>
-            <label class="f"><span>⏳ Таймаут всей попытки (сек)</span>
-              <input type="number" id="ghTimeoutAttempt" min="120" max="3600" value="900"></label>
-          </div>
-          <div class="row">
-            <label class="f"><span>🔄 Повторы при ошибке (0-3)</span>
-              <input type="number" id="ghMaxRetries" min="0" max="3" value="2"></label>
-            <label class="f"><span>🚫 Смен хука при NSFW (0-10)</span>
-              <input type="number" id="ghNsfwRotations" min="0" max="10" value="3"></label>
-          </div>
-          <div class="hint" style="margin-top:-6px;margin-bottom:12px">
-            <b>Таймаут генерации</b> — сколько ждать готовое видео. <b>Таймаут попытки</b> — общий лимит
-            на регистрацию, загрузку, генерацию и скачивание; по его истечении браузер закрывается
-            принудительно и задача считается неудачной.<br>
-            <b>NSFW</b> не расходует повторы: берётся другой хук и генерация стартует заново.
-            Итог всегда равен N × M — вместо провалившихся задач ставятся замещающие.
-          </div>
-
-          <details class="sec">
-            <summary>Папки исходников и настройки браузера</summary>
-            <div class="row">
-              <label class="f"><span>Видео-исходники (--videos-dir)</span>
-                <input type="text" id="ghVideosDir" value="./hook_refs"></label>
-              <label class="f"><span>Папка моделей (--models-dir)</span>
-                <input type="text" id="ghModelsDir" value="./models"></label>
-            </div>
-            <label class="chk">
-              <input type="checkbox" id="ghHeaded" checked> Отображать окно Chrome браузера (--headed)
-            </label>
-          </details>
-
-          <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
-            <button class="btn" id="btnStartHooks" onclick="startHookGen()">🚀 Запустить генерацию AI-Хуков</button>
-            <button class="btn ghost" id="btnStopHooks" style="display:none" onclick="stopHookGen()">⏹
-              Остановить</button>
-            <button class="btn ghost" id="btnResetHooks" onclick="resetHookState()">🧹 Сбросить состояние</button>
-          </div>
-
-          <div id="ghProgressWrap" style="display:none;margin-top:16px">
-            <div class="bar"><i id="ghBarFill" style="width:0%"></i></div>
-            <div class="status">
-              <span class="s" id="ghStateText">Генерация...</span>
-              <span id="ghPctText">0%</span>
-            </div>
-            <div class="log" id="ghLog" style="margin-top:10px;max-height:180px"></div>
-          </div>
-        </div>
-
-        <div class="card" id="sysinfoCard">
-          <h2><span class="num">📂</span>Папки и конфигурация проекта</h2>
-          <div class="cfg-loading" id="cfgLoading">Сканирую папки проекта…</div>
-          <div id="cfgContent" style="display:none"></div>
-          <button class="cfg-toggle" id="cfgRefresh" style="display:none" onclick="loadProjectConfig()">↻
-            Обновить</button>
-        </div>
+    <details class="sec">
+      <summary>Расширенные настройки</summary>
+      <div class="row">
+        <label class="f"><span>⏳ Таймаут попытки (сек)</span>
+          <input type="number" id="ghTimeoutAttempt" min="120" max="3600" value="900"></label>
+        <label class="f"><span>🔄 Повторы при ошибке (0-3)</span>
+          <input type="number" id="ghMaxRetries" min="0" max="3" value="2"></label>
       </div>
-
-      <!-- ПРАВАЯ КОЛОНКА -->
-      <div>
-        <div class="card">
-          <h2><span class="num">2</span>Формат</h2>
-          <div class="seg" id="preset" style="margin-bottom:14px">
-            <button data-v="reels" class="on">9:16 Reels</button>
-            <button data-v="youtube">16:9 YouTube</button>
-            <button data-v="square">1:1</button>
-          </div>
-          <label class="f"><span>Вписывание кадра</span>
-            <div class="seg" id="fill">
-              <button data-v="blur" class="on">Размытый фон</button>
-              <button data-v="pad">Поля</button>
-              <button data-v="crop">Обрезка</button>
-            </div>
-          </label>
-          <div class="hint">«Размытый фон» — когда исходники горизонтальные, а нужен вертикальный ролик. «Обрезка» режет
-            края, зато без полей.</div>
-        </div>
-
-        <div class="card">
-          <h2><span class="num">3</span>Текст</h2>
-          <div class="preview" id="preview">
-            <div class="pv-text" id="pvText"></div>
-          </div>
-          <label class="f"><span>Текст по этапам</span></label>
-          <div class="stabs" id="stabs"></div>
-          <div class="stage-text-panels" id="stextPanels"></div>
-          <div class="row">
-            <label class="f"><span>Шрифт</span><select id="font"></select></label>
-            <label class="f"><span>Кегль <b id="sizeV">64</b></span>
-              <input type="range" id="size" min="24" max="140" value="64"></label>
-          </div>
-          <div class="row">
-            <label class="f"><span>Цвет текста</span><input type="color" id="color" value="#ffffff"></label>
-            <label class="f"><span>Подложка <b id="opV">45%</b></span>
-              <input type="range" id="opacity" min="0" max="100" value="45"></label>
-          </div>
-          <label class="f"><span>Позиция</span>
-            <div class="seg" id="pos">
-              <button data-v="top">Верх</button>
-              <button data-v="center">Центр</button>
-              <button data-v="bottom" class="on">Низ</button>
-              <button data-v="custom">X/Y</button>
-            </div>
-          </label>
-          <div class="row" id="xyRow" style="display:none">
-            <label class="f"><span>X, px</span><input type="number" id="tx" value="80"></label>
-            <label class="f"><span>Y, px</span><input type="number" id="ty" value="1400"></label>
-          </div>
-          <details class="sec">
-            <summary>Тонкие настройки текста</summary>
-            <div class="row">
-              <label class="f"><span>Появление, сек</span><input type="number" id="fade" value="0.4" step="0.1"
-                  min="0"></label>
-              <label class="f"><span>Перенос, симв.</span><input type="number" id="wrap" value="22" min="0"></label>
-            </div>
-            <div class="row">
-              <label class="f"><span>Старт, сек</span><input type="number" id="tstart" value="0" step="0.5"
-                  min="0"></label>
-              <label class="f"><span>Длительность, сек</span><input type="number" id="tdur" value="0" step="0.5"
-                  min="0"></label>
-            </div>
-            <div class="hint">Длительность 0 — текст висит до конца ролика.</div>
-            <label class="chk"><input type="checkbox" id="shadow" checked> Тень под текстом</label>
-          </details>
-        </div>
-
-        <div class="card">
-          <h2><span class="num">4</span>Умный монтаж</h2>
-          <label class="f"><span>Пауза считается «зависанием» после <b id="ptV">1.0 с</b></span>
-            <input type="range" id="pt" min="0.3" max="4" step="0.1" value="1"></label>
-          <label class="f"><span>Что делать с паузой</span>
-            <div class="seg" id="pact">
-              <button data-v="speed" class="on">Ускорить</button>
-              <button data-v="cut">Вырезать</button>
-            </div>
-          </label>
-          <label class="f" id="psWrap"><span>Ускорение пауз <b id="psV">×5</b></span>
-            <input type="range" id="ps" min="2" max="20" step="1" value="5"></label>
-          <label class="f"><span>Лимит на этап <b id="msV">12 с</b></span>
-            <input type="range" id="ms" min="0" max="40" step="1" value="12"></label>
-          <div class="hint">Если этап после чистки длиннее лимита — ускорится целиком (не больше потолка). 0 — без
-            лимита.</div>
-          <div class="row">
-            <label class="f"><span>Потолок ускорения</span><input type="number" id="maxsp" value="4" step="0.5"
-                min="1"></label>
-            <label class="f"><span>Базовое ускорение</span><input type="number" id="basesp" value="1" step="0.1"
-                min="0.5"></label>
-          </div>
-          <label class="chk"><input type="checkbox" id="trim" checked> Резать статику в начале и конце каждого
-            файла</label>
-          <details class="sec">
-            <summary>Детектор и склейка</summary>
-            <label class="f"><span>Чувствительность к статике <b id="fnV">0.003</b></span>
-              <input type="range" id="fn" min="0.001" max="0.02" step="0.001" value="0.003"></label>
-            <div class="hint">Больше — детектор грубее (переживёт шум сжатия и мигающий курсор).</div>
-            <label class="f"><span>Переход между этапами <b id="cfV">0.5 с</b></span>
-              <input type="range" id="cf" min="0" max="1.5" step="0.1" value="0.5"></label>
-            <label class="f"><span>Тип перехода</span>
-              <select id="trans">
-                <option value="fade">fade — мягкое растворение</option>
-                <option value="fadeblack">fadeblack — через чёрный</option>
-                <option value="slideleft">slideleft — сдвиг влево</option>
-                <option value="slideup">slideup — сдвиг вверх</option>
-                <option value="wipeleft">wipeleft — шторка</option>
-                <option value="circleopen">circleopen — круг</option>
-                <option value="dissolve">dissolve — зерно</option>
-              </select></label>
-            <label class="chk"><input type="checkbox" id="audio"> Сохранить звук исходников</label>
-            <div class="row">
-              <label class="f"><span>Качество (CRF)</span><input type="number" id="crf" value="20" min="14"
-                  max="30"></label>
-              <label class="f"><span>Скорость кодека</span>
-                <select id="x264">
-                  <option>veryfast</option>
-                  <option>faster</option>
-                  <option selected>medium</option>
-                  <option>slow</option>
-                </select></label>
-            </div>
-          </details>
-        </div>
+      <div class="row">
+        <label class="f"><span>🚫 Смен хука при NSFW (0-10)</span>
+          <input type="number" id="ghNsfwRotations" min="0" max="10" value="3"></label>
+        <label class="f"><span>Видео-исходники</span>
+          <input type="text" id="ghVideosDir" value="./hook_refs"></label>
       </div>
+      <div class="row">
+        <label class="f"><span>Папка моделей</span>
+          <input type="text" id="ghModelsDir" value="./models"></label>
+        <div></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="ghHeaded" checked> Показывать окно Chrome (headed)</label>
+      <div class="hint">
+        <b>Таймаут попытки</b> — общий лимит на регистрацию + загрузку + генерацию + скачивание.
+        <b>NSFW</b> не расходует повторы: берётся другой хук и генерация заново.
+        Итог строго N × M — вместо провалов ставятся замещающие задачи.
+      </div>
+    </details>
+
+    <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
+      <button class="btn" id="btnStart" onclick="startGen()">🚀 Запустить генерацию</button>
+      <button class="btn ghost" id="btnStop" style="display:none" onclick="stopGen()">⏹ Остановить</button>
+      <button class="btn ghost sm" id="btnReset" onclick="resetState()">🧹 Сбросить</button>
+    </div>
+
+    <div id="progressWrap" style="display:none;margin-top:16px">
+      <div class="bar"><i id="barFill" style="width:0%"></i></div>
+      <div class="status">
+        <span id="stateText">Генерация...</span>
+        <span id="pctText">0%</span>
+      </div>
+      <div class="log" id="logBox" style="margin-top:10px"></div>
     </div>
   </div>
 
-  <div class="footer">
-    <div class="footer-in">
-      <input type="text" id="outname" value="clipforge.mp4" style="max-width:210px">
-      <div class="progress">
-        <div class="bar"><i id="barFill"></i></div>
-        <div class="status"><span class="s" id="stateText">Загрузите видео и нажмите «Собрать ролик»</span><span
-            id="pctText"></span></div>
-      </div>
-      <button class="btn" id="go" disabled>Собрать ролик</button>
-    </div>
+  <div class="card">
+    <h2><span class="ic">📂</span>Папки проекта</h2>
+    <div id="cfgLoading" style="text-align:center;padding:12px;color:var(--muted);font-size:13px">Сканирую…</div>
+    <div id="cfgContent" style="display:none"></div>
+    <button style="display:none;margin-top:10px;border:0;background:0;color:var(--accent2);font:inherit;font-size:12px;cursor:pointer" id="cfgRefresh" onclick="loadSysinfo()">↻ Обновить</button>
   </div>
-  <div class="toast" id="toast"></div>
+</div>
 
-  <script>
-    let $ = (id) => document.getElementById(id);
-    let JOB = null, STAGES = [], POLL = null, BUSY = false;
-    const FILES = {};
+<div class="toast" id="toast"></div>
 
-    function toast(msg) {
-      const t = $('toast'); t.textContent = msg; t.classList.add('on');
-      clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2600);
-    }
-    function fmt(s) {
-      s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = Math.round(s % 60);
-      return m ? `${m}:${String(r).padStart(2, '0')}` : `${s.toFixed(1)} с`;
-    }
+<script>
+const $=id=>document.getElementById(id);
 
-    /* ---------------- сегментированные переключатели ---------------- */
-    function segValue(id) { return $(id).querySelector('button.on').dataset.v; }
-    document.querySelectorAll('.seg').forEach(seg => {
-      seg.addEventListener('click', e => {
-        const b = e.target.closest('button'); if (!b) return;
-        seg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
-        b.classList.add('on'); onSettingsChange();
-      });
-    });
+// ---- Models state ----
+let ALL_MODELS=[];         // [{name,size}]
+let EXCLUDED_MODELS=new Set(); // names excluded
 
-    /* ---------------- инициализация ---------------- */
-    async function init() {
-      const r = await fetch('/api/init').then(r => r.json());
-      if (!r.ffmpeg) {
-        $('ffdot').className = 'dot err'; $('ffver').textContent = r.error || 'ffmpeg не найден';
-        $('go').disabled = true; return;
-      }
-      $('ffdot').className = 'dot ok';
-      $('ffver').textContent = r.ffmpeg.replace('ffmpeg version', 'ffmpeg').slice(0, 42);
-      JOB = r.job; STAGES = r.stages;
-      $('font').innerHTML = '<option value="auto">Авто (лучший sans-serif)</option>' +
-        r.fonts.map(f => `<option>${f}</option>`).join('');
-      buildSlots();
-      buildStageTabs();
-      onSettingsChange();
-      autoLoadFolder();
-    }
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2600)}
+function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB'}
 
-    function buildSlots() {
-      $('slots').innerHTML = STAGES.map((s, i) => `
-    <div class="slot" data-stage="${s.key}">
-      <div class="thumb" data-stage="${s.key}"><span class="idx">${i + 1}</span>＋</div>
-      <div class="slot-main">
-        <div class="slot-title">${s.label} <code>${s.key}</code>
-          <span class="pill" id="pill-${s.key}" style="display:none"></span></div>
-        <div class="meta" id="meta-${s.key}">Файл не выбран — кликните или перетащите</div>
-        <input class="cap" type="text" id="cap-${s.key}" placeholder="Подпись на этом этапе (необязательно)">
-      </div>
-    </div>`).join('');
-
-      STAGES.forEach(s => {
-        const slot = document.querySelector(`.slot[data-stage="${s.key}"]`);
-        slot.querySelector('.thumb').onclick = () => pickFile(s.key);
-        ;['dragenter', 'dragover'].forEach(ev => slot.addEventListener(ev, e => {
-          e.preventDefault(); slot.classList.add('hot');
-        }));
-        ;['dragleave', 'drop'].forEach(ev => slot.addEventListener(ev, e => {
-          e.preventDefault(); slot.classList.remove('hot');
-        }));
-        slot.addEventListener('drop', e => {
-          const f = e.dataTransfer.files[0]; if (f) upload(s.key, f);
-        });
-      });
-    }
-
-    let PICK_STAGE = null;
-    function pickFile(stage) { PICK_STAGE = stage; $('fileOne').value = ''; $('fileOne').click(); }
-    $('fileOne').onchange = e => { const f = e.target.files[0]; if (f && PICK_STAGE) upload(PICK_STAGE, f); };
-
-    /* массовая загрузка */
-    const da = $('dropall');
-    ;['dragenter', 'dragover'].forEach(ev => da.addEventListener(ev, e => { e.preventDefault(); da.classList.add('hot') }));
-    ;['dragleave', 'drop'].forEach(ev => da.addEventListener(ev, e => { e.preventDefault(); da.classList.remove('hot') }));
-    da.onclick = () => { $('fileAll').value = ''; $('fileAll').click(); };
-    $('fileAll').onchange = e => spread([...e.target.files]);
-    da.addEventListener('drop', e => spread([...e.dataTransfer.files]));
-
-    function spread(files) {
-      const rest = [];
-      files.forEach(f => {
-        const hit = STAGES.find(s => f.name.toLowerCase().replace(/[^a-z0-9]/g, '')
-          .startsWith(s.key.replace(/_/g, '')));
-        if (hit && !FILES[hit.key]) upload(hit.key, f); else rest.push(f);
-      });
-      rest.forEach(f => {
-        const k = STAGES.map(s => s.key).find(k => !FILES[k] && !PENDING.has(k));
-        if (k) { PENDING.add(k); upload(k, f); }
-      });
-    }
-    const PENDING = new Set();
-
-    /* ---------------- авто-загрузка из папок проекта при открытии страницы ---------------- */
-    async function autoLoadFolder() {
-      // Папки для поиска — по приоритету
-      const FOLDERS = ['raw_batch', 'raw', 'hook_refs', 'generated_hooks'];
-      for (const folder of FOLDERS) {
-        try {
-          const r = await fetch('/api/load_folder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job: JOB, folder })
-          }).then(r => r.json());
-          if (r.error || !r.loaded || !Object.keys(r.loaded).length) continue;
-          applyLoaded(r.loaded, folder);
-          return;   // нашли — стопаем
-        } catch (_) { continue; }
-      }
-      // Ничего не нашли — просто оставляем пустые слоты
-      $('stateText').textContent = 'Загрузите видео и нажмите «Собрать ролик»';
-    }
-
-    function applyLoaded(loaded, folderLabel) {
-      let count = 0;
-      for (const [stage, info] of Object.entries(loaded)) {
-        FILES[stage] = info;
-        const slot = document.querySelector(`.slot[data-stage="${stage}"]`);
-        if (!slot) continue;
-        slot.classList.add('filled');
-        const th = slot.querySelector('.thumb');
-        th.style.backgroundImage = `url(/api/thumb?job=${JOB}&stage=${stage}&t=${Date.now()})`;
-        th.innerHTML = `<span class="idx">${STAGES.findIndex(s => s.key === stage) + 1}</span>`;
-        $('meta-' + stage).innerHTML = `<b>${fmt(info.duration)}</b> · ${info.width}×${info.height} · ${Math.round(info.fps)} fps · ${info.name}`;
-        const pill = $('pill-' + stage); pill.style.display = '';
-        pill.className = 'pill' + (info.audio ? ' a' : '');
-        pill.textContent = info.audio ? 'звук есть' : 'без звука';
-        if (!$('preview').style.backgroundImage)
-          $('preview').style.backgroundImage = `url(/api/thumb?job=${JOB}&stage=${stage}&t=${Date.now()})`;
-        count++;
-      }
-      $('go').disabled = BUSY || count === 0;
-      $('stateText').textContent = `Загружено ${count} файлов из «${folderLabel}»`;
-      if (count > 0) toast(`✅ Найдено ${count} файлов в «${folderLabel}»`);
-    }
-
-    /* ---------------- загрузка файла ---------------- */
-    function upload(stage, file) {
-      const meta = $('meta-' + stage);
-      meta.textContent = 'Загрузка 0%…';
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `/api/upload?job=${JOB}&stage=${stage}&name=${encodeURIComponent(file.name)}`);
-      xhr.upload.onprogress = e => {
-        if (e.lengthComputable)
-          meta.textContent = `Загрузка ${Math.round(e.loaded / e.total * 100)}%…`;
-      };
-      xhr.onload = () => {
-        PENDING.delete(stage);
-        let d; try { d = JSON.parse(xhr.responseText); } catch (_) { d = { error: 'Сервер вернул мусор' }; }
-        if (xhr.status >= 400 || d.error) { meta.textContent = 'Ошибка: ' + (d.error || xhr.status); return; }
-        FILES[stage] = d;
-        const slot = document.querySelector(`.slot[data-stage="${stage}"]`);
-        slot.classList.add('filled');
-        const th = slot.querySelector('.thumb');
-        th.style.backgroundImage = `url(/api/thumb?job=${JOB}&stage=${stage}&t=${Date.now()})`;
-        th.innerHTML = `<span class="idx">${STAGES.findIndex(s => s.key === stage) + 1}</span>`;
-        meta.innerHTML = `<b>${fmt(d.duration)}</b> · ${d.width}×${d.height} · ${Math.round(d.fps)} fps · ${file.name}`;
-        const pill = $('pill-' + stage); pill.style.display = '';
-        pill.className = 'pill' + (d.audio ? ' a' : ''); pill.textContent = d.audio ? 'звук есть' : 'без звука';
-        if (!$('preview').style.backgroundImage)
-          $('preview').style.backgroundImage = `url(/api/thumb?job=${JOB}&stage=${stage}&t=${Date.now()})`;
-        $('go').disabled = BUSY || Object.keys(FILES).length === 0;
-        $('stateText').textContent = `Загружено ${Object.keys(FILES).length} из 5`;
-      };
-      xhr.onerror = () => { meta.textContent = 'Ошибка сети при загрузке'; PENDING.delete(stage); };
-      xhr.send(file);
-    }
-
-    /* ---------------- живое превью текста ---------------- */
-    function onSettingsChange() {
-      $('sizeV').textContent = $('size').value;
-      $('opV').textContent = $('opacity').value + '%';
-      $('ptV').textContent = (+$('pt').value).toFixed(1) + ' с';
-      $('psV').textContent = '×' + $('ps').value;
-      $('msV').textContent = (+$('ms').value) ? $('ms').value + ' с' : 'без лимита';
-      $('cfV').textContent = (+$('cf').value).toFixed(1) + ' с';
-      $('fnV').textContent = (+$('fn').value).toFixed(3);
-      $('psWrap').style.display = segValue('pact') === 'speed' ? '' : 'none';
-      $('xyRow').style.display = segValue('pos') === 'custom' ? '' : 'none';
-
-      const wide = segValue('preset') === 'youtube';
-      $('preview').classList.toggle('wide', wide);
-      const pv = $('pvText'), pos = segValue('pos');
-      const boxH = $('preview').clientHeight || 300;
-      pv.textContent = activeStageText() || '';
-      pv.style.fontSize = ($('size').value / 1920 * boxH * 1.15) + 'px';
-      pv.style.color = $('color').value;
-      pv.style.background = `rgba(0,0,0,${$('opacity').value / 100})`;
-      pv.style.textShadow = $('shadow').checked ? '0 2px 6px rgba(0,0,0,.8)' : 'none';
-      pv.style.top = pv.style.bottom = pv.style.transform = '';
-      if (pos === 'top') { pv.style.top = '10%'; }
-      else if (pos === 'center') { pv.style.top = '50%'; pv.style.transform = 'translateY(-50%)'; }
-      else if (pos === 'custom') { pv.style.top = (100 * (+$('ty').value) / 1920) + '%'; }
-      else { pv.style.top = '74%'; pv.style.transform = 'translateY(-50%)'; }
-    }
-    let STAB_IDX = 0;
-    const STAGE_TEXTS = {}; // {key: string}
-
-    function buildStageTabs() {
-      const tabs = $('stabs'); const panels = $('stextPanels');
-      if (!tabs || !panels || !STAGES.length) return;
-      tabs.innerHTML = '';
-      panels.innerHTML = '';
-      STAGES.forEach((s, i) => {
-        const tab = document.createElement('button');
-        tab.className = 'stab' + (i === 0 ? ' on' : '');
-        tab.dataset.idx = i;
-        tab.dataset.key = s.key;
-        tab.textContent = `${i + 1}. ${s.label}`;
-        tab.onclick = () => switchStab(i);
-        tabs.appendChild(tab);
-
-        const panel = document.createElement('div');
-        panel.className = i === 0 ? 'on' : '';
-        panel.dataset.key = s.key;
-        panel.innerHTML = `<textarea id="stext-${s.key}" rows="3"
-      placeholder="Текст для этапа «${s.label}» (пусто = без текста)" style="width:100%;resize:vertical"></textarea>`;
-        panels.appendChild(panel);
-
-        // слушаем изменения
-        panel.querySelector('textarea').addEventListener('input', e => {
-          STAGE_TEXTS[s.key] = e.target.value;
-          const t = tabs.querySelector(`[data-key="${s.key}"]`);
-          t.classList.toggle('has', !!e.target.value.trim());
-          onSettingsChange();
-        });
-      });
-    }
-
-    function switchStab(idx) {
-      STAB_IDX = idx;
-      document.querySelectorAll('.stab').forEach((t, i) => t.classList.toggle('on', i === idx));
-      document.querySelectorAll('.stage-text-panels > div').forEach((p, i) => p.classList.toggle('on', i === idx));
-      onSettingsChange();
-    }
-
-    function activeStageText() {
-      if (!STAGES.length) return '';
-      return STAGE_TEXTS[STAGES[STAB_IDX]?.key] || '';
-    }
-
-    document.querySelectorAll('input,select,textarea').forEach(el => {
-      el.addEventListener('input', onSettingsChange);
-    });
-    window.addEventListener('resize', onSettingsChange);
-
-    /* ---------------- сбор настроек ---------------- */
-    function collect() {
-      const captions = {};
-      STAGES.forEach(s => { const v = $('cap-' + s.key).value.trim(); if (v) captions[s.key] = v; });
-
-      // Собираем тексты по этапам: если хоть один заполнен — склеиваем через ' || '
-      const textParts = STAGES.map(s => (STAGE_TEXTS[s.key] || '').trim());
-      const hasAnyText = textParts.some(t => t);
-      const mainText = hasAnyText ? textParts.join(' || ') : '';
-
-      return {
-        preset: segValue('preset'), fill: segValue('fill'),
-        trim_edges: $('trim').checked,
-        pause_threshold: +$('pt').value, pause_action: segValue('pact'),
-        pause_speed: +$('ps').value, max_stage_seconds: +$('ms').value,
-        max_speed: +$('maxsp').value, base_speed: +$('basesp').value,
-        freeze_noise: +$('fn').value,
-        crossfade: +$('cf').value, transition: $('trans').value,
-        keep_audio: $('audio').checked, crf: +$('crf').value, x264_preset: $('x264').value,
-        text: {
-          text: mainText, font: $('font').value, size: +$('size').value,
-          color: $('color').value, position: segValue('pos'),
-          x: +$('tx').value, y: +$('ty').value,
-          box: +$('opacity').value > 0, box_opacity: +$('opacity').value / 100,
-          shadow: $('shadow').checked, fade: +$('fade').value,
-          start: +$('tstart').value, duration: +$('tdur').value, wrap: +$('wrap').value,
-        },
-        stage_captions: captions,
-      };
-    }
-
-    /* ---------------- запуск ---------------- */
-    $('go').onclick = async () => {
-      if (BUSY) return;
-      const missing = STAGES.filter(s => !FILES[s.key]);
-      if (missing.length && !confirm(`Не загружено этапов: ${missing.length}. Собрать из того, что есть?`)) return;
-      BUSY = true; $('go').disabled = true; $('result').classList.remove('on');
-      $('log').textContent = ''; $('log').classList.remove('err-box');
-      const r = await fetch('/api/render', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job: JOB, settings: collect(), output: $('outname').value })
-      })
-        .then(r => r.json()).catch(e => ({ error: String(e) }));
-      if (r.error) { BUSY = false; $('go').disabled = false; toast(r.error); $('stateText').textContent = r.error; return; }
-      POLL = setInterval(poll, 600); poll();
-    };
-
-    async function poll() {
-      const s = await fetch(`/api/status?job=${JOB}`).then(r => r.json()).catch(() => null);
-      if (!s) return;
-      $('barFill').style.width = s.percent + '%';
-      $('pctText').textContent = s.percent ? s.percent.toFixed(0) + '%' : '';
-      const names = {
-        analyze: 'Анализирую паузы', render: 'Монтирую этапы',
-        concat: 'Склеиваю и накладываю текст', done: 'Готово'
-      };
-      $('stateText').textContent = names[s.stage] || 'Работаю…';
-      if (s.log && s.log.length) { const l = $('log'); l.textContent = s.log.join('\n'); l.scrollTop = l.scrollHeight; }
-      if (s.state === 'done') { finish(s); }
-      if (s.state === 'error') {
-        clearInterval(POLL); BUSY = false; $('go').disabled = false;
-        $('stateText').textContent = 'Ошибка сборки';
-        $('log').classList.add('err-box'); toast('Сборка не удалась — смотрите лог');
-      }
-    }
-
-    function finish(s) {
-      clearInterval(POLL); BUSY = false; $('go').disabled = false;
-      $('stateText').textContent = 'Готово';
-      $('player').src = `/api/result?job=${JOB}&t=${Date.now()}`;
-      const st = s.stats || {};
-      $('stats').innerHTML = [
-        ['Длительность', fmt(st.duration)],
-        ['Было', fmt(st.source_duration)],
-        ['Вырезано', fmt(st.saved)],
-        ['Сборка заняла', fmt(st.elapsed)],
-      ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
-      const rows = (st.clips || []).map(c => {
-        const label = (STAGES.find(x => x.key === c.stage) || {}).label || c.stage;
-        return `<tr><td>${label}</td><td>${c.in} с</td><td>${c.out} с</td>
-            <td>×${c.speed}</td><td>${c.pauses}</td></tr>`;
-      }).join('');
-      $('plan').innerHTML = rows ? `<tr><th>Этап</th><th>Было</th><th>Стало</th><th>Ускорение</th><th>Пауз</th></tr>${rows}` : '';
-      $('result').classList.add('on');
-      $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      toast('Ролик собран');
-    }
-
-    $('download').onclick = () => location.href = `/api/result?job=${JOB}&dl=1`;
-    $('again').onclick = () => {
-      $('result').classList.remove('on');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    /* ---------------- папки и конфигурация проекта ---------------- */
-    function fmtSize(b) {
-      if (b < 1024) return b + ' B';
-      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
-      if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
-      return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
-    }
-
-    function renderFiles(files) {
-      if (!files || !files.length) return '<div style="color:var(--muted);padding:4px 0">Нет файлов</div>';
-      return '<ul class="cfg-files">' + files.map(f =>
-        `<li><span class="fname">${f.name}</span><span class="fsize">${fmtSize(f.size)}</span></li>`
-      ).join('') + '</ul>';
-    }
-
-    function renderItems(items, label) {
-      if (!items || !items.length) return `<div style="color:var(--muted);padding:4px 0">Нет ${label}</div>`;
-      return '<ul class="cfg-items">' + items.map(t => `<li>${t}</li>`).join('') + '</ul>';
-    }
-
-    function renderBatches(batches) {
-      if (!batches || !batches.length) return '<div style="color:var(--muted);padding:4px 0">Нет батчей</div>';
-      return batches.map(b => {
-        let tags = [];
-        if (b.videos) tags.push(`${b.videos} видео`);
-        if (b.screenshots) tags.push(`${b.screenshots} скринов`);
-        if (b.has_creds) tags.push('аккаунты');
-        return `<div class="cfg-batch">
-      <span class="bname">${b.name}/</span>
-      ${tags.map(t => `<span class="btag">${t}</span>`).join('')}
+function renderModelCards(){
+  const g=$('modelGrid');
+  if(!ALL_MODELS.length){g.innerHTML='<div style="color:var(--muted);padding:8px">Нет фото в папке models/</div>';return}
+  g.innerHTML=ALL_MODELS.map(m=>{
+    const exc=EXCLUDED_MODELS.has(m.name);
+    return `<div class="model-card${exc?' excluded':''}" data-name="${m.name}">
+      <div class="m-thumb">🧑</div>
+      <div class="m-info"><div class="m-name">${m.name}</div><div class="m-size">${fmtSize(m.size)}</div></div>
+      <button class="m-toggle${exc?'':' on'}" onclick="toggleModel('${m.name}',this)" title="${exc?'Включить':'Выключить'}"></button>
     </div>`;
-      }).join('');
+  }).join('');
+  updateCalc();
+}
+
+function toggleModel(name,btn){
+  if(EXCLUDED_MODELS.has(name)){EXCLUDED_MODELS.delete(name);btn.classList.add('on');btn.closest('.model-card').classList.remove('excluded')}
+  else{EXCLUDED_MODELS.add(name);btn.classList.remove('on');btn.closest('.model-card').classList.add('excluded')}
+  updateCalc();
+}
+
+function getActiveModels(){return ALL_MODELS.filter(m=>!EXCLUDED_MODELS.has(m.name))}
+
+function updateCalc(){
+  const active=getActiveModels();
+  const n=+$('ghGenPerModel').value||1;
+  const total=active.length*n;
+  $('ghCalcHint').textContent=`🎯 Итого: ${active.length} модел${active.length===1?'ь':active.length<5?'и':'ей'} × ${n} = ${total} видео`;
+  $('modelCountLabel').textContent=`${active.length}/${ALL_MODELS.length} активных`;
+}
+
+// ---- Generation ----
+let POLL=null;
+const TERMINAL=['idle','done','error','cancelled'];
+
+async function startGen(){
+  const active=getActiveModels();
+  if(!active.length){toast('Нет активных моделей!');return}
+  const tg=+$('ghTimeoutGen').value||300;
+  // If only some models selected, pass model_photo="" and let backend use models_dir
+  // We pass specific model if only 1 selected
+  let modelPhoto='';
+  if(active.length===1) modelPhoto=active[0].name;
+  else if(active.length<ALL_MODELS.length){
+    // Multiple but not all — we need a different approach
+    // For now pass empty and exclude via models_dir filtering isn't supported
+    // We'll pass comma-separated names to the backend
+    modelPhoto=active.map(m=>m.name).join(',');
+  }
+  const payload={
+    workers:+$('ghWorkers').value||1,
+    generations_per_model:+$('ghGenPerModel').value||1,
+    videos_dir:$('ghVideosDir').value,
+    models_dir:$('ghModelsDir').value,
+    model_photo:modelPhoto,
+    output_dir:$('ghOutputDir').value,
+    headed:$('ghHeaded').checked,
+    timeout_gen:tg,
+    timeout_attempt:Math.max(tg+60,+$('ghTimeoutAttempt').value||900),
+    max_retries:Math.min(3,Math.max(0,+$('ghMaxRetries').value||2)),
+    nsfw_rotations:Math.min(10,Math.max(0,+$('ghNsfwRotations').value||3))
+  };
+  $('btnStart').disabled=true;
+  $('btnStop').style.display='';
+  $('btnStop').disabled=false;
+  $('progressWrap').style.display='block';
+  $('logBox').classList.remove('err-box');
+  $('logBox').textContent='Инициализация...';
+  try{
+    const r=await fetch('/api/generate_hooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(r.error){toast('Ошибка: '+r.error);resetUI();return}
+    toast('🚀 Генерация запущена');
+    startPoll();
+  }catch(e){toast('Ошибка сети: '+e);resetUI()}
+}
+
+function startPoll(){if(POLL)clearInterval(POLL);POLL=setInterval(pollStatus,1000)}
+
+async function pollStatus(){
+  try{
+    const s=await fetch('/api/generate_hooks_status').then(r=>r.json());
+    if(!s)return;
+    $('barFill').style.width=(s.percent||0)+'%';
+    $('pctText').textContent=Math.round(s.percent||0)+'%';
+    const c=`${s.done||0}/${s.total||0}`+(s.failed?`, провалов ${s.failed}`:'');
+    const beat=(s.heartbeat_age>=20)?` · без активности ${Math.round(s.heartbeat_age)}с`:'';
+    const labels={
+      running:`⚙️ ${c}${s.phase?' · '+s.phase:''}${beat}`,
+      cancelling:'⏹ Останавливаю…',
+      done:`✅ Готово: ${c}`,
+      cancelled:`⏹ Отменено: ${c}`,
+      error:'❌ '+(s.error||'ошибка'),
+      idle:'🟢 Готов к новой задаче'
+    };
+    $('stateText').textContent=labels[s.state]||'Работаю…';
+    if(s.log&&s.log.length){const l=$('logBox');l.textContent=s.log.join('\n');l.scrollTop=l.scrollHeight}
+    if(s.state==='cancelling'){$('btnStart').disabled=true;$('btnStop').disabled=true;return}
+    if(TERMINAL.includes(s.state)){
+      if(POLL){clearInterval(POLL);POLL=null;resetUI();
+        if(s.state==='done'){toast('✅ Генерация завершена!');loadSysinfo()}
+        else if(s.state==='cancelled'){toast('⏹ Отменено');loadSysinfo()}
+        else if(s.state==='error'){toast('❌ Ошибка');$('logBox').classList.add('err-box')}
+      }else{resetUI()}
     }
+  }catch(_){}
+}
 
-    function statusLabel(s) {
-      if (s === 'ok') return '✓';
-      if (s === 'empty') return 'пусто';
-      return '✗';
-    }
+function resetUI(){$('btnStart').disabled=false;$('btnStop').disabled=false;$('btnStop').style.display='none'}
 
-    async function loadProjectConfig() {
-      $('cfgLoading').style.display = '';
-      $('cfgContent').style.display = 'none';
-      $('cfgRefresh').style.display = 'none';
-      try {
-        const r = await fetch('/api/sysinfo').then(r => r.json());
-        let html = '';
-        if (r.project_root) {
-          html += `<div class="cfg-path">📁 ${r.project_root}</div>`;
-        }
-        (r.sections || []).forEach((s, i) => {
-          if (s.id === 'models' && s.files) {
-            window.TOTAL_MODELS_COUNT = s.files.length || 0;
-            const curVal = $('ghModelPhoto').value;
-            let opts = '<option value="">Все модели из папки models/</option>';
-            s.files.forEach(f => {
-              opts += `<option value="${f.name}" ${f.name === curVal ? 'selected' : ''}>${f.name}</option>`;
-            });
-            $('ghModelPhoto').innerHTML = opts;
-            updateCalculatedHookCount();
-          }
-          let bodyContent = '';
-          bodyContent += `<div class="cfg-path">${s.path}</div>`;
-          if (s.files) bodyContent += renderFiles(s.files);
-          if (s.items) bodyContent += renderItems(s.items, s.id === 'texts' ? 'текстов' : 'элементов');
-          if (s.batches) bodyContent += renderBatches(s.batches);
+async function stopGen(){
+  $('btnStop').disabled=true;
+  try{await fetch('/api/stop_hooks',{method:'POST'})}catch(_){}
+  toast('⏹ Отмена запрошена…');startPoll();
+}
 
-          const badgeText = s.status === 'ok' ? `${s.count}` : (s.status === 'empty' ? 'пусто' : 'нет папки');
+async function resetState(){
+  try{const r=await fetch('/api/reset_hooks',{method:'POST'}).then(r=>r.json());toast(`🧹 Сброшено (профилей: ${r.profiles_removed??0})`)}catch(e){toast('Ошибка: '+e)}
+  if(POLL){clearInterval(POLL);POLL=null}
+  resetUI();$('logBox').classList.remove('err-box');pollStatus();
+}
 
-          html += `<div class="cfg-section" data-cfg-idx="${i}">
+// ---- Sysinfo ----
+async function loadSysinfo(){
+  $('cfgLoading').style.display='';$('cfgContent').style.display='none';$('cfgRefresh').style.display='none';
+  try{
+    const r=await fetch('/api/sysinfo').then(r=>r.json());
+    let html='';
+    if(r.project_root)html+=`<div style="font-size:11px;color:#5a6580;margin-bottom:8px;word-break:break-all">📁 ${r.project_root}</div>`;
+    (r.sections||[]).forEach((s,i)=>{
+      if(s.id==='models'&&s.files){
+        ALL_MODELS=s.files||[];
+        EXCLUDED_MODELS.clear();
+        renderModelCards();
+      }
+      let body=`<div style="font-size:11px;color:#5a6580;margin:4px 0 8px;word-break:break-all">${s.path}</div>`;
+      if(s.files)body+='<ul class="cfg-files">'+s.files.map(f=>`<li><span class="fname">${f.name}</span><span class="fsize">${fmtSize(f.size)}</span></li>`).join('')+'</ul>';
+      if(s.items)body+='<ul class="cfg-files" style="list-style:none;padding:0;margin:0">'+s.items.map(t=>`<li style="padding:3px 0;border-bottom:1px solid rgba(35,43,58,.3);color:#c6d0e4;font-size:12px">${t}</li>`).join('')+'</ul>';
+      if(s.batches)body+=s.batches.map(b=>`<div class="cfg-batch"><span class="bname">${b.name}/</span>${b.videos?`<span class="btag">${b.videos} видео</span>`:''}${b.has_creds?'<span class="btag">аккаунты</span>':''}</div>`).join('');
+      const badge=s.status==='ok'?s.count:(s.status==='empty'?'пусто':'✗');
+      html+=`<div class="cfg-section" data-idx="${i}">
         <div class="cfg-header" onclick="this.parentElement.classList.toggle('open')">
-          <span class="cfg-icon">${s.icon}</span>
-          <span class="cfg-title">${s.title}</span>
-          <span class="cfg-badge ${s.status}">${badgeText}</span>
-          <span class="cfg-dot ${s.status}"></span>
-          <span class="cfg-arrow">›</span>
-        </div>
-        <div class="cfg-body">${bodyContent}</div>
-      </div>`;
-        });
-        $('cfgContent').innerHTML = html;
-        $('cfgContent').style.display = '';
-      } catch (e) {
-        $('cfgContent').innerHTML = `<div style="color:var(--err);padding:10px">Ошибка: ${e}</div>`;
-        $('cfgContent').style.display = '';
-      }
-      $('cfgLoading').style.display = 'none';
-      $('cfgRefresh').style.display = '';
-    }
+          <span class="cfg-icon">${s.icon}</span><span class="cfg-title">${s.title}</span>
+          <span class="cfg-badge ${s.status}">${badge}</span>
+          <span class="cfg-dot ${s.status}"></span><span class="cfg-arrow">›</span>
+        </div><div class="cfg-body">${body}</div></div>`;
+    });
+    $('cfgContent').innerHTML=html;$('cfgContent').style.display='';
+  }catch(e){$('cfgContent').innerHTML=`<div style="color:var(--err);padding:10px">Ошибка: ${e}</div>`;$('cfgContent').style.display=''}
+  $('cfgLoading').style.display='none';$('cfgRefresh').style.display='';
+}
 
-    function updateCalculatedHookCount() {
-      const modelSel = $('ghModelPhoto').value;
-      const genPerModel = +$('ghGenPerModel').value || 1;
-      let modelsCount = modelSel ? 1 : (window.TOTAL_MODELS_COUNT || 1);
-      const total = modelsCount * genPerModel;
-      const hint = $('ghCalculatedHint');
-      if (hint) {
-        hint.textContent = `🎯 Итого сгенерируется ровно ${total} видео (${modelsCount} фото × ${genPerModel} хук(ов))`;
-      }
-    }
-    /* ---------------- генерация AI-хуков ---------------- */
-    let HOOK_POLL = null;
-
-    // Терминальные состояния задачи: слот свободен, можно стартовать заново.
-    const HOOK_TERMINAL = ['idle', 'done', 'error', 'cancelled'];
-
-    function startHookPoll() {
-      if (HOOK_POLL) clearInterval(HOOK_POLL);
-      HOOK_POLL = setInterval(pollHookGen, 1000);
-    }
-
-    async function startHookGen() {
-      const timeoutGen = +$('ghTimeoutGen').value || 300;
-      const payload = {
-        workers: +$('ghWorkers').value || 1,
-        generations_per_model: +$('ghGenPerModel').value || 1,
-        videos_dir: $('ghVideosDir').value,
-        models_dir: $('ghModelsDir').value,
-        model_photo: $('ghModelPhoto').value,
-        output_dir: $('ghOutputDir').value,
-        headed: $('ghHeaded').checked,
-        timeout_gen: timeoutGen,
-        timeout_attempt: Math.max(timeoutGen + 60, +$('ghTimeoutAttempt').value || 900),
-        max_retries: Math.min(3, Math.max(0, +$('ghMaxRetries').value || 2)),
-        nsfw_rotations: Math.min(10, Math.max(0, +$('ghNsfwRotations').value || 3))
-      };
-      $('btnStartHooks').disabled = true;
-      $('btnStopHooks').style.display = '';
-      $('btnStopHooks').disabled = false;
-      $('ghProgressWrap').style.display = 'block';
-      $('ghLog').classList.remove('err-box');
-      $('ghLog').textContent = 'Инициализация процесса...';
-
-      try {
-        const r = await fetch('/api/generate_hooks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).then(res => res.json());
-
-        if (r.error) {
-          toast('Ошибка запуска: ' + r.error);
-          resetHookUI();
-          return;
-        }
-        toast('🚀 Генерация запущена');
-        startHookPoll();
-      } catch (e) {
-        toast('Ошибка сети при запуске: ' + e);
-        resetHookUI();
-      }
-    }
-
-    async function pollHookGen() {
-      try {
-        const s = await fetch('/api/generate_hooks_status').then(r => r.json());
-        if (!s) return;
-
-        $('ghBarFill').style.width = (s.percent || 0) + '%';
-        $('ghPctText').textContent = Math.round(s.percent || 0) + '%';
-
-        const counters = `${s.done || 0}/${s.total || 0}` +
-          (s.failed ? `, провалов ${s.failed}` : '');
-        const beat = (s.heartbeat_age >= 20) ? ` · без активности ${Math.round(s.heartbeat_age)}с` : '';
-        const stateLabels = {
-          running: `⚙️ Выполнение: ${counters}${s.phase ? ' · ' + s.phase : ''}${beat}`,
-          cancelling: '⏹ Останавливаю воркеры, подождите…',
-          done: `✅ Готово: ${counters}`,
-          cancelled: `⏹ Отменено: ${counters}`,
-          error: '❌ Ошибка: ' + (s.error || 'неизвестная'),
-          idle: '🟢 Готов к новой задаче'
-        };
-        $('ghStateText').textContent = stateLabels[s.state] || 'Готов к работе';
-
-        if (s.log && s.log.length) {
-          const l = $('ghLog');
-          l.textContent = s.log.join('\n');
-          l.scrollTop = l.scrollHeight;
-        }
-
-        if (s.state === 'cancelling') {
-          // Пока воркеры не остановлены, слот занят: старт остаётся заблокирован.
-          $('btnStartHooks').disabled = true;
-          $('btnStopHooks').disabled = true;
-          return;
-        }
-
-        if (HOOK_TERMINAL.includes(s.state)) {
-          // Слот свободен — разблокируем интерфейс в любом случае.
-          if (HOOK_POLL) {
-            clearInterval(HOOK_POLL);
-            HOOK_POLL = null;
-            resetHookUI();
-            if (s.state === 'done') {
-              toast('✅ Генерация завершена!');
-              loadProjectConfig();
-            } else if (s.state === 'cancelled') {
-              toast('⏹ Генерация отменена. Можно запускать заново.');
-              loadProjectConfig();
-            } else if (s.state === 'error') {
-              toast('❌ Генерация завершилась с ошибкой');
-              $('ghLog').classList.add('err-box');
-            }
-          } else {
-            resetHookUI();
-          }
-        }
-      } catch (_) { }
-    }
-
-    function resetHookUI() {
-      $('btnStartHooks').disabled = false;
-      $('btnStopHooks').disabled = false;
-      $('btnStopHooks').style.display = 'none';
-    }
-
-    async function stopHookGen() {
-      $('btnStopHooks').disabled = true;
-      try {
-        await fetch('/api/stop_hooks', { method: 'POST' });
-      } catch (_) { }
-      toast('⏹ Отмена запрошена, останавливаю воркеры…');
-      // Кнопку «Старт» разблокирует только опрос, когда слот освободится.
-      startHookPoll();
-    }
-
-    async function resetHookState() {
-      // Аварийный выход в «Готов к новой задаче»: снимает залипшую задачу,
-      // добивает осиротевшие браузеры и чистит временные профили.
-      try {
-        const r = await fetch('/api/reset_hooks', { method: 'POST' })
-          .then(res => res.json());
-        toast(`🧹 Состояние сброшено (профилей удалено: ${r.profiles_removed ?? 0})`);
-      } catch (e) {
-        toast('Не удалось сбросить состояние: ' + e);
-      }
-      if (HOOK_POLL) { clearInterval(HOOK_POLL); HOOK_POLL = null; }
-      resetHookUI();
-      $('ghLog').classList.remove('err-box');
-      pollHookGen();
-    }
-
-    // Проверяем статус при загрузке страницы
-    pollHookGen();
-
-    loadProjectConfig();
-
-    init();
-  </script>
+// ---- Init ----
+pollStatus();
+loadSysinfo();
+</script>
 </body>
-
 </html>

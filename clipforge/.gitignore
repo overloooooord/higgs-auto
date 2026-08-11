@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+**/raw_batch/**/*.mp4
+**/raw_batch/*.mp4
+raw_batch/
+*.tmp

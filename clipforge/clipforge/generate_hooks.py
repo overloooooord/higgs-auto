@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import queue
@@ -272,7 +273,7 @@ class AnyMessageClient:
             raise RuntimeError(f"AnyMessage no email: {res}")
         return email
 
-    def get_otp_code(self, timeout_sec: int = 180, poll: float = 5.0,
+    def get_otp_code(self, timeout_sec: int = 180, poll: float = 1.5,
                      cancel: Optional[threading.Event] = None,
                      deadline: Optional["Deadline"] = None) -> Optional[str]:
         """Poll AnyMessage for verification code from Clerk/Higgsfield.
@@ -283,7 +284,7 @@ class AnyMessageClient:
         if not self._email_id:
             raise RuntimeError("Call get_temp_email() first")
         # Give Clerk a moment to actually send the email
-        interruptible_wait(3, cancel, deadline, "ожидание OTP")
+        interruptible_wait(1.5, cancel, deadline, "ожидание OTP")
         start = time.time()
         while time.time() - start < timeout_sec:
             if deadline is not None and deadline.expired():
@@ -382,11 +383,11 @@ class GuerrillaMailClient:
         self._email = d["email_addr"]
         return self._email
 
-    def get_otp_code(self, timeout_sec: int = 180, poll: float = 5.0,
+    def get_otp_code(self, timeout_sec: int = 180, poll: float = 1.5,
                      cancel: Optional[threading.Event] = None,
                      deadline: Optional["Deadline"] = None) -> Optional[str]:
         """Poll inbox for 6-digit OTP (прерываемо по отмене/дедлайну)."""
-        interruptible_wait(3, cancel, deadline, "ожидание OTP")
+        interruptible_wait(1.5, cancel, deadline, "ожидание OTP")
         start = time.time()
         seen: set = set()
         while time.time() - start < timeout_sec:
@@ -432,7 +433,22 @@ class GuerrillaMailClient:
 
 # ---------------------------------------------------------------- helpers
 
+def _resolve_dir(folder: str) -> str:
+    if os.path.isdir(folder):
+        return folder
+    # Try parent directories relative to this file and current working dir
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(base_dir)
+    grandparent_dir = os.path.dirname(parent_dir)
+    folder_name = os.path.basename(folder.rstrip("/\\"))
+    for root in [parent_dir, base_dir, os.getcwd(), grandparent_dir]:
+        candidate = os.path.join(root, folder_name)
+        if os.path.isdir(candidate):
+            return candidate
+    return folder
+
 def _list_files(folder: str, exts: tuple[str, ...]) -> list[str]:
+    folder = _resolve_dir(folder)
     if not os.path.isdir(folder):
         return []
     files = [os.path.join(folder, f) for f in os.listdir(folder)
@@ -477,7 +493,7 @@ class HookGenerator:
         output_dir: str,
         anymessage_key: str = "",
         site_url: str = MOTION_URL,
-        headless: bool = True,
+        headless: bool = False,
         timeout_gen: int = 300,
         max_retries: int = 2,
         guerrillamail_sid: str = "",
@@ -489,7 +505,9 @@ class HookGenerator:
         self.videos = _list_files(videos_dir, (".mp4", ".mov", ".webm", ".m4v"))
         all_models = _list_files(models_dir, (".png", ".jpg", ".jpeg", ".webp"))
         if model_photo:
-            matched = [m for m in all_models if os.path.basename(m).lower() == model_photo.lower()]
+            # Support comma-separated list of model filenames from UI
+            names = [n.strip().lower() for n in model_photo.split(",") if n.strip()]
+            matched = [m for m in all_models if os.path.basename(m).lower() in names]
             self.models = matched if matched else all_models
         else:
             self.models = all_models
@@ -570,14 +588,33 @@ class HookGenerator:
         """
         expr = re.sub(r"^\s*return\s+", "", script, count=1)
 
-        # Режим уже известен — сразу правильная форма.
+        # Режим уже известен — сразу правильная форма,
+        # но после навигации SeleniumBase может молча сменить режим
+        # (WebDriver ↔ CDP), поэтому при «Illegal return» пробуем другой.
         if self._js_expr_mode is True:
             try:
                 return sb.execute_script(expr)
-            except Exception:                               # noqa: BLE001
+            except Exception as exc:                        # noqa: BLE001
+                if "Illegal return statement" in str(exc):
+                    # Switched back to WebDriver — try with return
+                    self._js_expr_mode = False
+                    try:
+                        return sb.execute_script(script)
+                    except Exception:                       # noqa: BLE001
+                        return default
                 return default
         if self._js_expr_mode is False:
-            return sb.execute_script(script)
+            try:
+                return sb.execute_script(script)
+            except Exception as exc:                        # noqa: BLE001
+                if "Illegal return statement" in str(exc):
+                    # Switched to CDP — try without return
+                    self._js_expr_mode = True
+                    try:
+                        return sb.execute_script(expr)
+                    except Exception:                       # noqa: BLE001
+                        return default
+                raise
 
         # Первый вызов: пробуем классическую форму и запоминаем результат.
         try:
@@ -889,6 +926,8 @@ class HookGenerator:
 
     # -------------------------------------------------------- registration
 
+    # -------------------------------------------------------- registration
+
     def _register(self, sb) -> str:
         """Sign up on Higgsfield via Clerk email flow.
 
@@ -903,311 +942,89 @@ class HookGenerator:
         print(f"  📧 Email: {email}")
 
         # Navigate to Higgsfield with UC anti-detection
-        sb.uc_open_with_reconnect(HOME_URL, reconnect_time=4)
+        sb.uc_open_with_reconnect(HOME_URL, reconnect_time=1)
         self._wait(1)
 
-        # Step 1: Click "Sign up" in nav bar and wait for Clerk modal
-        # Retry if modal doesn't appear (Clerk loads async)
-        for attempt in range(3):
-            # JS click: find visible nav-area "Sign up" button/link
-            self._js(sb, """return (function(){
-                var items = document.querySelectorAll('button, a');
-                for (var el of items) {
-                    if (el.textContent.trim() === 'Sign up'
-                        && el.offsetParent !== null
-                        && el.getBoundingClientRect().top < 100) {
-                        el.click();
+        # Step 1: Wait for "Sign up" button to appear in DOM, then click immediately via JS
+        # (don't use sb.click — it blocks until document.readyState=complete which is slow)
+        print("  ⏳ Waiting for Sign up button...")
+        self._js(sb, """
+            (function poll() {
+                var btns = document.querySelectorAll('button, a');
+                for (var b of btns) {
+                    if (b.textContent.trim().includes('Sign up') && b.offsetHeight > 0) {
+                        b.click();
                         return;
                     }
                 }
-                // Fallback: any exact "Sign up"
-                for (var el of items) {
-                    if (el.textContent.trim() === 'Sign up' && el.offsetParent !== null) {
-                        el.click();
-                        return;
-                    }
-                }
-                })()""")
-            print(f"  ✓ Clicked Sign up (attempt {attempt + 1})")
+                setTimeout(poll, 200);
+            })();
+        """)
+        print("  ✓ Clicked Sign up (JS polling, no page-load wait)")
 
-            # Wait for Clerk modal — check both main document and iframes
-            modal_ok = False
-            for wait_i in range(12):
-                self._wait(1)
-                try:
-                    # Standard text check
-                    if (sb.is_text_visible("Continue with Email") or
-                        sb.is_text_visible("Continue with Google") or
-                        sb.is_text_visible("Welcome to Higgsfield") or
-                        sb.is_text_visible("Create an account")):
-                        modal_ok = True
-                        break
-                except Exception:
-                    pass
-                # JS fallback — check body text including iframes
-                try:
-                    found = self._js(sb, """return (function(){
-                        var txt = document.body.innerText || '';
-                        if (txt.includes('Continue with Email') || txt.includes('Welcome to Higgsfield'))
-                            return true;
-                        // Check iframes
-                        var frames = document.querySelectorAll('iframe');
-                        for (var f of frames) {
-                            try {
-                                var ftxt = f.contentDocument.body.innerText || '';
-                                if (ftxt.includes('Continue with Email')) return true;
-                            } catch(e) {}
-                        }
-                        return false;
-                        })()""")
-                    if found:
-                        modal_ok = True
-                        break
-                except Exception:
-                    pass
-            if modal_ok:
-                print("  ✓ Clerk modal appeared")
-                break
-            print("  ⚠ Modal not detected, retrying...")
-        else:
-            raise RuntimeError("Clerk modal did not appear after 3 attempts")
-
-        # Step 2-3: The signup form may show email+password fields directly
-        # (new UI) or require clicking "Continue with Email" first (old UI).
-        # Detect which variant we have.
-
-        # Check if email input is already visible using JS (more reliable than Selenium)
-        self._wait(0.5)
-        email_input_visible = False
-        try:
-            email_input_visible = self._js(sb, """return (function(){
-                var inputs = document.querySelectorAll('input');
-                for (var i = 0; i < inputs.length; i++) {
-                    var inp = inputs[i];
-                    var r = inp.getBoundingClientRect();
-                    if (r.width > 10 && r.height > 10 && inp.type !== 'hidden'
-                        && (inp.type === 'email' || inp.placeholder.toLowerCase().includes('email')
-                            || inp.name === 'emailAddress' || inp.autocomplete === 'email')) {
-                        return true;
-                    }
+        # Wait for Clerk modal to appear
+        modal_ok = False
+        for wait_i in range(12):
+            modal_open = self._js(sb, """return (function(){
+                var txt = document.body.innerText || '';
+                if (txt.includes('Continue with Email') || txt.includes('Welcome to Higgsfield')
+                    || txt.includes('Create an account') || txt.includes('Continue with Google'))
+                    return true;
+                var frames = document.querySelectorAll('iframe');
+                for (var f of frames) {
+                    try {
+                        if (f.contentDocument.body.innerText.includes('Continue with Email')) return true;
+                    } catch(e) {}
                 }
                 return false;
-                })()""") or False
-        except Exception:
-            pass
-
-        # Also check if "Continue with Email" button is already visible as a submit button
-        # (new Higgsfield UI shows the full form with email+password directly)
-        if not email_input_visible:
-            try:
-                has_submit = self._js(sb, """return (function(){
-                    var btns = document.querySelectorAll('button');
-                    for (var b of btns) {
-                        var txt = b.textContent.trim();
-                        if (txt.includes('Continue with Email') && b.offsetParent) {
-                            // Check if there's also an email input nearby (form already open)
-                            var form = b.closest('form') || document.querySelector('form');
-                            if (form) {
-                                var inp = form.querySelector('input[type="email"], input[placeholder*="email" i]');
-                                if (inp) return 'form-with-submit';
-                            }
-                            return 'submit-btn-only';
-                        }
-                    }
-                    return null;
-                    })()""")
-                if has_submit == 'form-with-submit':
-                    email_input_visible = True
-                    print("  ✓ Email form already open (detected by submit button + input)")
-            except Exception:
-                pass
-
-        if not email_input_visible:
-            # Old UI: need to click "Continue with Email" to reveal fields
-            email_btn_clicked = False
-            try:
-                result = self._js(sb, """return (function(){
-                    // Clerk uses input[type=submit] NOT button!
-                    var submits = document.querySelectorAll('input[type="submit"]');
-                    for (var s of submits) {
-                        if (s.value && s.value.includes('Continue with Email')) {
-                            s.click();
-                            return 'input-submit';
-                        }
-                    }
-                    var btns = document.querySelectorAll('button, a, [role="button"]');
-                    for (var b of btns) {
-                        if (b.offsetHeight < 10) continue;
-                        var txt = b.textContent.trim();
-                        if (txt.includes('Continue with Email') || txt.includes('Continue with email')) {
-                            b.scrollIntoView({block: 'center'});
-                            b.click();
-                            return 'clicked';
-                        }
-                    }
-                    for (var b of btns) {
-                        if (b.offsetHeight < 10) continue;
-                        var txt = b.textContent.trim();
-                        if (txt === 'Email' || txt.includes('with Email')) {
-                            b.scrollIntoView({block: 'center'});
-                            b.click();
-                            return 'clicked-fallback';
-                        }
-                    }
-                    return null;
-                })()""")
-                if result:
-                    email_btn_clicked = True
-                    print(f"  ✓ Clicked Continue with Email ({result})")
-            except Exception as e:
-                print(f"  ⚠ JS email btn error: {e}")
-
-            if not email_btn_clicked:
-                for sel in [
-                    "input[type='submit'][value*='Continue']",
-                    '//button[contains(text(),"Continue with Email")]',
-                    '//button[contains(text(),"Email")]',
-                    '//*[contains(text(),"Continue with Email")]',
-                ]:
-                    try:
-                        sb.click(sel, timeout=5)
-                        email_btn_clicked = True
-                        print("  ✓ Clicked Continue with Email (XPath)")
-                        break
-                    except Exception:
-                        continue
-
-            if not email_btn_clicked:
-                # Last resort: maybe the form IS open but email_input_visible check failed
-                # Try to fill email anyway and see what happens
-                print("  ⚠ Could not find 'Continue with Email' button — attempting to fill form directly")
-                email_btn_clicked = True  # proceed optimistically
-
-            self._wait(1)
-        else:
-            print("  ✓ Email input already visible (unified form)")
-
-        # Step 3: Fill email address
-        email_sels = [
-            "input[name='emailAddress']",
-            "input[name='identifier']",
-            "input[type='email']",
-            "input[name='email']",
-            "input[placeholder*='mail' i]",
-            "input[placeholder*='email' i]",
-            "input[autocomplete='email']",
-            # Generic: первый видимый текстовый input (Clerk иногда рендерит
-            # поле без специфических атрибутов).
-            "input:not([type='hidden']):not([type='password']):not([type='file'])"
-            ":not([type='checkbox']):not([type='radio']):not([type='submit'])",
-        ]
-        filled = False
-        for sel in email_sels:
-            try:
-                sb.wait_for_element_visible(sel, timeout=8)
-                # Медленный посимвольный ввод: Clerk успевает провалидировать
-                # поле, и ввод не выглядит машинным.
-                self._type_slow(sb, sel, email)
-                filled = True
-                print(f"  ✓ Filled email via: {sel}")
+            })()""")
+            if modal_open:
+                modal_ok = True
+                print(f"  ✓ Clerk modal appeared (wait {wait_i}s)")
                 break
-            except Exception:
-                continue
+            self._wait(1)
 
-        # Fallback: найти поле через JS, пометить data-атрибутом, затем
-        # получить WebElement через driver.find_element и печатать
-        # посимвольно через send_keys (React/Clerk его видят как
-        # настоящий пользовательский ввод).
-        if not filled:
-            try:
-                found = self._js(sb, """return (function(){
-                    var inputs = document.querySelectorAll('input');
-                    for (var i = 0; i < inputs.length; i++) {
-                        var inp = inputs[i];
-                        if (inp.offsetParent !== null && inp.type !== 'hidden'
-                            && inp.type !== 'password' && inp.type !== 'file'
-                            && inp.type !== 'checkbox' && inp.type !== 'radio'
-                            && inp.type !== 'submit') {
-                            inp.setAttribute('data-cf-email', '1');
-                            return true;
-                        }
-                    }
-                    return false;
-                })()""")
-                if found:
-                    from selenium.webdriver.common.by import By
-                    driver = getattr(sb, "driver", sb)
-                    elem = driver.find_element(By.CSS_SELECTOR,
-                                               "[data-cf-email='1']")
-                    try:
-                        elem.clear()
-                    except Exception:
-                        pass
-                    elem.click()
-                    for ch in email:
-                        self._guard("ввод email")
-                        elem.send_keys(ch)
-                        interruptible_wait(
-                            0.09 + random.uniform(0.0, 0.05),
-                            cancel=self._cancel, deadline=self._deadline,
-                            phase="ввод email")
-                    filled = True
-                    print("  ✓ Filled email via JS-located element + send_keys")
-            except Exception as exc:
-                print(f"  ⚠ JS email fallback failed: {exc}")
+        if not modal_ok:
+            raise RuntimeError("Clerk modal did not appear after 15 attempts")
 
-        # Последний рубеж: nativeInputValueSetter (хуже, чем _type_slow,
-        # но лучше, чем ничего).
-        if not filled:
-            try:
-                self._js(sb, f"""(function(){{
-                    var inputs = document.querySelectorAll('input');
-                    for (var i = 0; i < inputs.length; i++) {{
-                        var inp = inputs[i];
-                        if (inp.offsetParent !== null && inp.type !== 'hidden'
-                            && inp.type !== 'password' && inp.type !== 'file') {{
-                            inp.focus();
-                            var nativeSet = Object.getOwnPropertyDescriptor(
-                                window.HTMLInputElement.prototype, 'value').set;
-                            nativeSet.call(inp, '{email}');
-                            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-                            inp.dispatchEvent(new Event('change', {{bubbles: true}}));
-                            break;
-                        }}
-                    }}
-                }})()""")
-                filled = True
-                print("  ✓ Filled email via nativeInputValueSetter (last resort)")
-            except Exception:
-                pass
+        # Step 2: Click "Continue with Email" button → reveals email + password fields
+        print("  ⏳ Clicking 'Continue with Email'...")
+        clicked = self._js(sb, """return (function(){
+            var btns = document.querySelectorAll('button');
+            for (var b of btns) {
+                if (b.offsetHeight < 1) continue;
+                if (b.textContent.trim().includes('Continue with Email')) {
+                    b.click();
+                    return 'clicked';
+                }
+            }
+            return null;
+        })()""")
+        if clicked:
+            print(f"  ✓ Clicked Continue with Email ({clicked})")
+        else:
+            print("  ⚠ 'Continue with Email' button not found — proceeding anyway")
 
-        if not filled:
-            raise RuntimeError("Email input not found in Clerk form")
+        # Step 3: Fill email — field has placeholder="Email"
+        sb.wait_for_element_visible("input[placeholder='Email']", timeout=10)
+        self._type_slow(sb, "input[placeholder='Email']", email)
+        filled = True
+        print("  ✓ Filled email via: input[placeholder='Email']")
 
-        # Step 3b: Fill password (Clerk requires it on Higgsfield)
+        # Step 3b: Fill password — field has placeholder="Password"
         base_chars = (random.choices(string.ascii_lowercase, k=8) +
                       random.choices(string.ascii_uppercase, k=3) +
                       random.choices(string.digits, k=3))
         random.shuffle(base_chars)
         password = "Cf!" + "".join(base_chars)
         pw_filled = False
-        # Wait for password field explicitly
-        for pw_wait in range(8):
-            try:
-                has_pw = self._js(sb, """return (function(){
-                    var pw = document.querySelector('input[type="password"]');
-                    return pw && pw.offsetHeight > 0;
-                    })()""")
-                if has_pw:
-                    break
-            except Exception:
-                pass
-            self._wait(1)
+
+        sb.wait_for_element_visible("input[placeholder='Password']", timeout=10)
 
         # Method 1: React-compatible nativeInputValueSetter
         try:
             result = self._js(sb, f"""
-                var inp = document.querySelector('input[type="password"]');
+                var inp = document.querySelector("input[placeholder='Password']");
                 if (!inp || inp.offsetHeight === 0) return 'not-found';
                 inp.focus();
                 var nativeSet = Object.getOwnPropertyDescriptor(
@@ -1223,16 +1040,16 @@ class HookGenerator:
         except Exception:
             pass
 
-        # Method 1: Type via Selenium / ActionChains to fire all React handlers
+        # Method 2: Type via Selenium send_keys to fire all React handlers
         try:
-            pw_elem = sb.find_element("input[type='password']")
+            pw_elem = sb.find_element("input[placeholder='Password']")
             pw_elem.click()
-            self._wait(0.1)
+            self._wait(0.04)
             pw_elem.clear()
             pw_elem.send_keys(password)
-            self._wait(0.2)
+            self._wait(0.1)
             self._js(sb, """return (function(){
-                var inp = document.querySelector('input[type="password"]');
+                var inp = document.querySelector("input[placeholder='Password']");
                 if (inp) {
                     ['input','change','blur','keyup'].forEach(function(e){
                         inp.dispatchEvent(new Event(e, {bubbles: true}));
@@ -1470,91 +1287,67 @@ class HookGenerator:
                 raise RuntimeError("OTP not received in 180 sec")
             print(f"  ✓ OTP: {otp}")
 
-            # Enter OTP code using nativeInputValueSetter for React compatibility
-            otp_entered = False
+            # Enter OTP — send digits one by one so Clerk's auto-submit fires
+            sb.wait_for_element_visible("input[placeholder='Code'], input[name='code']", timeout=10)
+            otp_elem = sb.find_element("input[placeholder='Code']") or sb.find_element("input[name='code']")
+            otp_elem.click()
+            otp_elem.clear()
+            for ch in otp:
+                otp_elem.send_keys(ch)
+                self._wait(0.05)
+            otp_entered = True
+            print(f"  ✓ Entered OTP via send_keys char-by-char")
 
-            # Method 1: nativeInputValueSetter (React-compatible, triggers state update)
-            for sel in ["input[name='code']", "input[inputmode='numeric']",
-                        "input[autocomplete='one-time-code']"]:
-                try:
-                    result = self._js(sb, f"""
-                        var inp = document.querySelector("{sel}");
-                        if (!inp || inp.offsetHeight === 0) return 'not-found';
-                        inp.focus();
-                        var nativeSet = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement.prototype, 'value').set;
-                        nativeSet.call(inp, '{otp}');
-                        inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-                        inp.dispatchEvent(new Event('change', {{bubbles: true}}));
-                        inp.dispatchEvent(new KeyboardEvent('keyup', {{bubbles: true}}));
-                        return 'ok';
-                    """)
-                    if result == 'ok':
-                        otp_entered = True
-                        print(f"  ✓ Entered OTP via nativeSet: {sel}")
-                        break
-                except Exception:
-                    continue
+            # Wait for auto-verification and natural site redirect (Clerk auto-submits & redirects)
+            print("  ⏳ Waiting for OTP verification and natural URL redirect...")
+            initial_url = ""
+            try:
+                initial_url = sb.get_current_url()
+            except Exception:
+                pass
 
-            # Method 2: Selenium send_keys fallback
-            if not otp_entered:
-                for sel in ["input[name='code']", "input[inputmode='numeric']",
-                            "input[type='tel']", "input[type='number']"]:
-                    try:
-                        el = sb.find_element(sel)
-                        el.click()
-                        self._wait(0.1)
-                        el.clear()
-                        for ch in otp:
-                            el.send_keys(ch)
-                            self._wait(0.05)
-                        otp_entered = True
-                        print(f"  ✓ Entered OTP via send_keys: {sel}")
-                        break
-                    except Exception:
-                        continue
-
-            # Method 3: individual digit inputs
-            if not otp_entered:
-                try:
-                    digit_inputs = sb.find_elements("input[data-input-otp='true']")
-                    if not digit_inputs:
-                        digit_inputs = sb.find_elements(
-                            ".cl-otpCodeFieldInput, input[inputmode='numeric']"
-                        )
-                    if digit_inputs and len(digit_inputs) >= len(otp):
-                        for idx, digit in enumerate(otp):
-                            digit_inputs[idx].send_keys(digit)
-                        otp_entered = True
-                        print("  ✓ Entered OTP digits individually")
-                except Exception:
-                    pass
-
-            if not otp_entered:
-                raise RuntimeError("OTP input field not found")
-
-            # Wait for auto-verification (Clerk auto-submits after 6 digits)
-            print("  ⏳ Waiting for OTP auto-verification...")
             verified = False
-            for _wait in range(12):
+            for _wait in range(15):
                 self._wait(1)
                 try:
+                    cur_url = sb.get_current_url() or ""
                     body_now = self._js(sb, "return document.body.innerText || ''") or ""
-                    # Check if OTP input is still in DOM & visible
+
+                    # Check for session cookie presence
+                    has_session_cookie = False
+                    try:
+                        cookies = sb.get_cookies()
+                        has_session_cookie = any(
+                            'session' in c.get('name', '').lower() or
+                            'clerk' in c.get('name', '').lower()
+                            for c in cookies
+                        )
+                    except Exception:
+                        pass
+
+                    # 1. URL changed from initial signup page
+                    url_changed = bool(initial_url and cur_url and cur_url != initial_url
+                                       and "sign-up" not in cur_url.lower()
+                                       and "verify" not in cur_url.lower())
+
+                    # 2. Authenticated UI / onboarding detected in DOM
+                    auth_ui_detected = any(m in body_now for m in [
+                        "How do you plan", "flagship studios", "Personalizing",
+                        "For personal use", "Motion Control", "Create Video",
+                        "Generate", "Video generator", "Cinema Studio"
+                    ])
+
+                    # 3. OTP input field is gone AND session cookie or URL change happened
                     otp_still_visible = self._js(sb, """return (function(){
                         var inp = document.querySelector('input[name="code"], input[inputmode="numeric"], input[autocomplete="one-time-code"]');
                         return inp && (inp.offsetWidth > 0 || inp.offsetHeight > 0);
                     })()""")
-                    
-                    if not otp_still_visible:
+
+                    if url_changed or auth_ui_detected or (not otp_still_visible and has_session_cookie):
                         verified = True
-                        print("  ✓ OTP input field disappeared — auto-verified!")
-                        break
-                    
-                    if ("How do you plan" in body_now or "flagship studios" in body_now
-                            or "Personalizing" in body_now or "For personal use" in body_now
-                            or "Motion Control" in body_now or "Create Video" in body_now):
-                        verified = True
+                        print(f"  ✓ OTP verified & redirect completed! (URL: {cur_url}, cookie={has_session_cookie})")
+                        # Allow 2.5s for session cookies & local storage to fully persist
+                        self._wait(2.5)
                         break
                 except Exception:
                     pass
@@ -1568,19 +1361,22 @@ class HookGenerator:
                 try:
                     sb.click(f'//button[contains(text(),"{btn_text}")]', timeout=2)
                     print(f"  ✓ Clicked {btn_text}")
-                    self._wait(1.5)
+                    self._wait(2)
                     break
                 except Exception:
                     continue
 
             # Re-check after manual button click
             try:
+                cur_url = sb.get_current_url() or ""
+                body_now = self._js(sb, "return document.body.innerText || ''") or ""
                 otp_still_visible = self._js(sb, """return (function(){
                     var inp = document.querySelector('input[name="code"], input[inputmode="numeric"], input[autocomplete="one-time-code"]');
                     return inp && (inp.offsetWidth > 0 || inp.offsetHeight > 0);
                 })()""")
-                if not otp_still_visible:
+                if not otp_still_visible or "sign-up" not in cur_url.lower():
                     print("  ✅ Registration complete!")
+                    self._wait(2)
                     return email
             except Exception:
                 pass
@@ -1619,26 +1415,31 @@ class HookGenerator:
 
         return email
 
+
     # -------------------------------------------------------- onboarding
 
     def _complete_onboarding(self, sb, max_steps: int = 20) -> None:
-        """Skip onboarding by navigating directly to Motion page."""
-        self._wait(1)
+        """Skip onboarding if needed by navigating smoothly to Motion page."""
+        self._wait(0.5)
         try:
+            cur_url = sb.get_current_url() or ""
+            if "motion" in cur_url.lower():
+                print("  ✓ Already on Motion page")
+                return
             body = self._js(sb, "return (document.body.innerText||'').substring(0,500)") or ""
         except Exception:
             body = ""
 
         if any(m in body for m in ["How do you plan", "1 of", "Personalizing",
                                     "For personal use", "flagship studios"]):
-            print("  ⏭ Onboarding detected — skipping via reload")
+            print("  ⏭ Onboarding detected — navigating to Motion page")
         else:
             print("  ℹ No onboarding")
             return
 
-        # Skip by navigating to Motion URL directly
-        sb.uc_open_with_reconnect(MOTION_URL, reconnect_time=4)
-        self._wait(1)
+        # Navigate using standard sb.open to preserve session cookies
+        sb.open(MOTION_URL)
+        self._wait(1.5)
         # Dismiss any remaining overlays
         try:
             self._js(sb, """return (function(){
@@ -1770,7 +1571,7 @@ class HookGenerator:
                 break
             self._wait(0.5)
 
-    def _goto(self, sb, url: str, reconnect: float = 4) -> None:
+    def _goto(self, sb, url: str, reconnect: float = 2) -> None:
         """Переходит по адресу и СРАЗУ закрывает всплывающие окна.
 
         Раньше попапы закрывались лишь на отдельных шагах, поэтому окно вроде
@@ -1778,7 +1579,7 @@ class HookGenerator:
         загрузка видео молча срывалась.
         """
         sb.uc_open_with_reconnect(url, reconnect_time=reconnect)
-        self._wait(1)
+        self._wait(0.5)
         self._close_popups(sb)
 
     def _setup_generation(self, sb, video_path: str, photo_path: str) -> None:
@@ -1865,7 +1666,8 @@ class HookGenerator:
                 except Exception:
                     pass
 
-        # Model picker — select "Kling Motion Control" (free, 5 credits), NOT "Kling 3.0 Motion Control" (paid, 7 credits)
+        # Model picker — select "
+        #  Motion Control" (free, 5 credits), NOT "Kling 3.0 Motion Control" (paid, 7 credits)
         # First check what model is currently selected
         try:
             current_model = self._js(sb, """return (function(){
@@ -1953,15 +1755,45 @@ class HookGenerator:
         except Exception as e:
             print(f"  ⚠ Model picker error: {e}")
 
-        self._wait(0.5)
+        self._wait(1)
 
-        # Resolution: prefer 1080p
+        # Resolution: click Quality / 720p dropdown and switch to 1080p
         try:
-            sb.click('//button[contains(text(),"720")]', timeout=2)
-            sb.click('//*[contains(text(),"1080")]', timeout=2)
-            print("  ✓ Resolution: 1080p")
-        except Exception:
-            pass
+            res_result = self._js(sb, """return (function(){
+                // 1. Try finding direct 1080p button/option first
+                var els = document.querySelectorAll('button, div, span, li, [role="option"]');
+                for (var el of els) {
+                    var t = (el.textContent || '').trim();
+                    if ((t === '1080p' || t === '1080') && el.offsetWidth > 0) {
+                        el.click(); return 'direct-1080';
+                    }
+                }
+                // 2. Click Quality / 720p dropdown trigger
+                var opened = false;
+                for (var el of els) {
+                    var t = (el.textContent || '').trim();
+                    if ((t === 'Quality' || t === '720p' || t === '720') && el.offsetWidth > 0) {
+                        el.click(); opened = true; break;
+                    }
+                }
+                if (!opened) return 'trigger-not-found';
+                return 'dropdown-opened';
+            })()""")
+            if res_result == 'dropdown-opened':
+                self._wait(0.6)
+                res_result = self._js(sb, """return (function(){
+                    var els = document.querySelectorAll('button, div, span, li, [role="option"], [role="menuitem"]');
+                    for (var el of els) {
+                        var t = (el.textContent || '').trim();
+                        if (t === '1080p' || t === '1080' || t.includes('1080')) {
+                            el.click(); return 'clicked-1080';
+                        }
+                    }
+                    return '1080-not-found';
+                })()""")
+            print(f"  ✓ Resolution: {res_result}")
+        except Exception as e:
+            print(f"  ⚠ Resolution picker error: {e}")
 
         # Background type: switch to Video (not Image) using the toggle
         # The toggle is inside the sidebar, NOT the "Video" tab in the top navbar
@@ -2159,8 +1991,12 @@ class HookGenerator:
         else:
             print(f"  ⚠ Video upload failed: {os.path.basename(video_path)}")
 
+        # Wait longer for React to process the video upload before triggering photo upload
+        self._wait(3)
+        # Close any popups that appeared after video upload before touching photo input
+        self._close_popups(sb)
+
         # --- Upload PHOTO ---
-        self._wait(1)
         photo_ok = do_upload("photo", photo_path, "image")
         if photo_ok:
             print(f"  🧑 Model photo: {os.path.basename(photo_path)}")
@@ -2996,10 +2832,19 @@ class HookGenerator:
         report(f"🚀 Старт: {target_total} задач")
 
         # ---- Фабрика браузера ------------------------------------------
+        sb_init_lock = threading.Lock()
+        
+        @contextlib.contextmanager
         def sb_factory(profile_dir: str, port: int, headless: bool):
-            return SB(uc=True, headless2=headless, locale="en",
-                      disable_csp=True, user_data_dir=profile_dir,
-                      chromium_arg=f"--remote-debugging-port={port}")
+            with sb_init_lock:
+                ctx = SB(uc=True, headless2=headless, locale="en",
+                          disable_csp=True, user_data_dir=profile_dir,
+                          chromium_arg=f"--remote-debugging-port={port}")
+                sb = ctx.__enter__()
+            try:
+                yield sb
+            finally:
+                ctx.__exit__(None, None, None)
 
         self._warmup_driver(sb_factory, cancel)
 
@@ -3067,6 +2912,24 @@ class HookGenerator:
                                 f"📝 Регистрация аккаунта…")
                         self._register(sb)
                         self._guard("после регистрации")
+
+                        # Verify we're actually authenticated before proceeding
+                        try:
+                            body_check = self._js(sb,
+                                "return (document.body.innerText||'').substring(0,500)") or ""
+                            if (("Continue with Email" in body_check
+                                    or "Continue with Google" in body_check
+                                    or "Create an account" in body_check)
+                                    and "Generate" not in body_check
+                                    and "Motion" not in body_check):
+                                raise RuntimeError(
+                                    "Регистрация не завершена — всё ещё на экране входа")
+                            _tprint(f"  [W{worker_id}|T{task.task_id}] "
+                                    f"✅ Авторизация подтверждена")
+                        except RuntimeError:
+                            raise
+                        except Exception:
+                            pass  # не удалось проверить — продолжаем
 
                         self._complete_onboarding(sb)
                         self._guard("после onboarding")
