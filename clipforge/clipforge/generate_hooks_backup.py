@@ -249,9 +249,14 @@ class AnyMessageClient:
         qs.update(params or {})
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}{urllib.parse.urlencode(qs)}"
-        req = urllib.request.Request(url, method=method)
+        req = urllib.request.Request(
+            url, method=method,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            import ssl
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
                 body = resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
             raise RuntimeError(
