@@ -243,7 +243,7 @@ class AnyMessageClient:
     """REST-client AnyMessage (anymessage.org)."""
 
     def __init__(self, api_key: str, base_url: str = "https://api.anymessage.shop",
-                 site: str = "higgsfield.ai", domain: str = "outlook.com"):
+                 site: str = "higgsfield.ai", domain: str = "gmail.com"):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.site = site
