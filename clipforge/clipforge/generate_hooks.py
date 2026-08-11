@@ -33,12 +33,18 @@ import tempfile
 import threading
 import time
 import traceback
+import ssl
 import urllib.error
 import urllib.parse
-from dataclasses import dataclass, field
+import urllib.request
+
+# Bypass SSL certificate verification errors on Windows/clean Python installs
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
 from enum import Enum, auto
 from selenium.webdriver.common.action_chains import ActionChains
-import urllib.request
 import uuid
 from typing import Callable, Optional
 
