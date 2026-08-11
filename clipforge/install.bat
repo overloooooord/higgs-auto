@@ -21,7 +21,7 @@ if errorlevel 1 (
     reg query "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1
     if errorlevel 1 (
         echo [!] Google Chrome not found. Installing Chrome automatically...
-        powershell -Command "$p = '$env:TEMP\chrome_installer.exe'; Write-Host 'Downloading Chrome...'; (New-Object System.Net.WebClient).DownloadFile('https://dl.google.com/chrome/install/latest/chrome_installer.exe', $p); Write-Host 'Installing Chrome...'; Start-Process $p -ArgumentList '/silent /install' -Wait; Remove-Item $p"
+        powershell -Command "Write-Host 'Downloading Chrome...'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('https://dl.google.com/chrome/install/latest/chrome_installer.exe', '%TEMP%\chrome_setup.exe'); Write-Host 'Installing Chrome...'; Start-Process '%TEMP%\chrome_setup.exe' -ArgumentList '/silent','/install' -Wait; Remove-Item '%TEMP%\chrome_setup.exe' -ErrorAction SilentlyContinue"
         echo [OK] Chrome installation complete!
     ) else (
         echo [OK] Chrome found
