@@ -1754,16 +1754,21 @@ class HookGenerator:
         """Skip onboarding by navigating directly to Motion page."""
         self._wait(0.5)
         try:
+            cur_url = sb.get_current_url() or ""
             body = self._js(sb, "return (document.body.innerText||'').substring(0,500)") or ""
         except Exception:
+            cur_url = ""
             body = ""
 
         if any(m in body for m in ["How do you plan", "1 of", "Personalizing",
-                                    "For personal use", "flagship studios"]):
-            print("  ⏭ Onboarding detected — skipping via reload")
+                                    "For personal use", "flagship studios"]) or "quiz" in cur_url.lower():
+            print("  ⏭ Onboarding/Quiz detected — skipping via reload")
         else:
-            print("  ℹ No onboarding")
-            return
+            if "motion" not in cur_url.lower():
+                print(f"  ⏭ Not on Motion page (URL: {cur_url}), navigating there...")
+            else:
+                print("  ℹ No onboarding")
+                return
 
         # Skip by navigating to Motion URL directly
         sb.uc_open_with_reconnect(MOTION_URL, reconnect_time=2)

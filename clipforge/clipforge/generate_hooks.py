@@ -1494,11 +1494,15 @@ class HookGenerator:
             body = ""
 
         if any(m in body for m in ["How do you plan", "1 of", "Personalizing",
-                                    "For personal use", "flagship studios"]):
-            print("  ⏭ Onboarding detected — navigating to Motion page")
+                                    "For personal use", "flagship studios"]) or "quiz" in cur_url.lower():
+            print("  ⏭ Onboarding/Quiz detected — navigating to Motion page")
         else:
-            print("  ℹ No onboarding")
-            return
+            # If we are not on motion page, we should still go there just in case
+            if "motion" not in cur_url.lower():
+                print(f"  ⏭ Not on Motion page (URL: {cur_url}), navigating there...")
+            else:
+                print("  ℹ No onboarding")
+                return
 
         # Navigate using standard sb.open to preserve session cookies
         sb.open(MOTION_URL)
