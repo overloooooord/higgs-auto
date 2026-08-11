@@ -522,14 +522,10 @@ class HookGenerator:
         self.max_retries = max_retries
         self.nsfw_rotations = max(0, int(nsfw_rotations))
         self._file_lock = threading.Lock()
-        #: Контекст попытки на поток: дедлайн + событие отмены.
+        #: Контекст попытки на поток: дедлайн + событие отмены + JS-режим + heartbeat.
         #: HookGenerator один на все воркеры, поэтому контекст обязан быть
-        #: thread-local, иначе воркеры перетирали бы дедлайны друг друга.
+        #: thread-local, иначе воркеры перетирают состояния и серцебиения друг друга.
         self._ctx = threading.local()
-        #: Режим выполнения JS: None — не определён, True — CDP (без
-        #: верхнеуровневого return), False — классический WebDriver.
-        self._js_expr_mode: Optional[bool] = None
-        self._heartbeat_cb: Optional[Callable[[], None]] = None
 
     # ------------------------------------------------- контекст попытки
 
@@ -537,6 +533,8 @@ class HookGenerator:
                   cancel: Optional[threading.Event]) -> None:
         self._ctx.deadline = deadline
         self._ctx.cancel = cancel
+        self._ctx.js_expr_mode = None
+        self._ctx.heartbeat_cb = None
 
     @property
     def _deadline(self) -> Optional[Deadline]:
@@ -545,6 +543,14 @@ class HookGenerator:
     @property
     def _cancel(self) -> Optional[threading.Event]:
         return getattr(self._ctx, "cancel", None)
+
+    @property
+    def _js_expr_mode(self) -> Optional[bool]:
+        return getattr(self._ctx, "js_expr_mode", None)
+
+    @_js_expr_mode.setter
+    def _js_expr_mode(self, val: Optional[bool]) -> None:
+        self._ctx.js_expr_mode = val
 
     # ------------------------------------------------- ввод текста
 
@@ -583,8 +589,7 @@ class HookGenerator:
         падали переключатель Video/Image, выбор модели и загрузка файлов:
         сайт потом отвечал «Input Video Required».
 
-        Здесь режим определяется один раз и запоминается, после чего скрипт
-        отправляется в подходящей форме: с `return` либо как выражение.
+        Здесь режим определяется один раз на ПОТОК и запоминается.
         """
         expr = re.sub(r"^\s*return\s+", "", script, count=1)
 
@@ -632,17 +637,13 @@ class HookGenerator:
             return default
 
     def set_heartbeat(self, cb: Optional[Callable[[], None]]) -> None:
-        """Регистрирует колбэк «я жив», вызываемый на каждом шаге сценария.
-
-        Раньше активность отмечалась только при завершении задачи, поэтому
-        детектор зависания срабатывал через `timeout_attempt + 120` от старта,
-        а не от реального залипания.
-        """
-        self._heartbeat_cb = cb
+        """Регистрирует колбэк «я жив», вызываемый на каждом шаге сценария в ТЕКУЩЕМ потоке."""
+        self._ctx.heartbeat_cb = cb
 
     def _beat(self) -> None:
-        cb = getattr(self, "_heartbeat_cb", None)
+        cb = getattr(self._ctx, "heartbeat_cb", None)
         if cb is not None:
+            cb()
             try:
                 cb()
             except Exception:                               # noqa: BLE001
@@ -3007,6 +3008,13 @@ class HookGenerator:
 
         # ---- Воркер ----------------------------------------------------
         def worker(wid: int) -> None:
+            # Ступенчатый запуск воркеров (0с, 4с, 8с...), чтобы браузеры не кликали
+            # Cloudflare Turnstile и регистрацию Clerk в одну и ту же миллисекунду.
+            if wid > 1:
+                stagger_sec = (wid - 1) * 4.0
+                _tprint(f"  [W{wid}] ⏳ Ступенчатый старт: пауза {stagger_sec:.1f}с...")
+                interruptible_wait(stagger_sec, cancel=cancel, phase="старт воркера")
+
             while not cancel.is_set():
                 try:
                     task = task_queue.get(timeout=1.0)
