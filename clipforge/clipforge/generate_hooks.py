@@ -3148,10 +3148,21 @@ class HookGenerator:
         # Register kill_all_active with the job manager so that reset()
         # can force-close browsers even when the run() function hasn't
         # returned yet.  This is the fix for "reset doesn't stop browsers".
-        from .jobs import MANAGER
-        current_job = MANAGER.current()
-        if current_job is not None:
-            MANAGER.register_killer(current_job, lambda: kill_all_active("reset"))
+        try:
+            from .jobs import MANAGER
+        except (ImportError, ValueError):
+            try:
+                from clipforge.jobs import MANAGER
+            except (ImportError, ValueError):
+                try:
+                    from jobs import MANAGER
+                except (ImportError, ValueError):
+                    MANAGER = None
+
+        if MANAGER is not None:
+            current_job = MANAGER.current()
+            if current_job is not None:
+                MANAGER.register_killer(current_job, lambda: kill_all_active("reset"))
 
         threads: list[threading.Thread] = []
         for wid in range(1, effective_workers + 1):
